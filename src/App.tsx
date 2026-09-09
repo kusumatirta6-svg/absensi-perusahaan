@@ -57,7 +57,7 @@ export default function App() {
 
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'Moon1729') {
+    if (adminPassword === 'admin123') { // Anda bisa ganti password admin di sini
       setRole('admin');
       setActiveTab('riwayat');
     } else {
@@ -169,6 +169,22 @@ export default function App() {
       setNamaBaru('');
       setJabatanBaru('');
       fetchDataKaryawan();
+    }
+  };
+
+  // Fungsi Hapus Karyawan
+  const handleHapusKaryawan = async (id: string, nama: string) => {
+    if (window.confirm(`Apakah Anda yakin ingin menghapus data karyawan "${nama}"?`)) {
+      setLoading(true);
+      const { error } = await supabase.from('karyawan').delete().eq('id', id);
+      setLoading(false);
+
+      if (error) {
+        alert('Gagal menghapus karyawan: ' + error.message);
+      } else {
+        alert(`Karyawan ${nama} berhasil dihapus.`);
+        fetchDataKaryawan();
+      }
     }
   };
 
@@ -439,13 +455,21 @@ export default function App() {
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {daftarKaryawan.map(k => (
                       <li key={k.id} style={{ padding: '10px 14px', background: '#fff', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '3px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', marginRight: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '3px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>
                             {k.id_karyawan || 'ID-'}
                           </span>
-                          <strong style={{ color: '#1e293b' }}>{k.nama}</strong>
+                          <div>
+                            <strong style={{ color: '#1e293b', display: 'block' }}>{k.nama}</strong>
+                            <span style={{ color: '#64748b', fontSize: '12px' }}>{k.jabatan}</span>
+                          </div>
                         </div>
-                        <span style={{ color: '#64748b', fontSize: '13px' }}>{k.jabatan}</span>
+                        <button 
+                          onClick={() => handleHapusKaryawan(k.id, k.nama)}
+                          style={{ background: '#fee2e2', color: '#991b1b', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+                        >
+                          🗑️ Hapus
+                        </button>
                       </li>
                     ))}
                   </ul>
