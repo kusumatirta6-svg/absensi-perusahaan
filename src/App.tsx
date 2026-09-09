@@ -6,6 +6,7 @@ interface Karyawan {
   id_karyawan: string;
   nama: string;
   jabatan: string;
+  pin?: string;
 }
 
 interface Absen {
@@ -35,9 +36,11 @@ export default function App() {
   const [idKaryawanBaru, setIdKaryawanBaru] = useState('');
   const [namaBaru, setNamaBaru] = useState('');
   const [jabatanBaru, setJabatanBaru] = useState('');
+  const [pinBaru, setPinBaru] = useState('1234');
 
-  // Form States Absen
-  const [selectedKaryawan, setSelectedKaryawan] = useState('');
+  // Form States Login Karyawan & Absen
+  const [inputPinKaryawan, setInputPinKaryawan] = useState('');
+  const [karyawanLogin, setKaryawanLogin] = useState<Karyawan | null>(null);
   const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
 
@@ -47,9 +50,16 @@ export default function App() {
 
   // Fitur GPS & Kamera State
   const [lokasiUser, setLokasiUser] = useState<string>('Mendeteksi lokasi...');
+  const [jarakKantorMeter, setJarakKantorMeter] = useState<number | null>(null);
   const [fotoSnapshot, setFotoSnapshot] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // KONFIGURASI TITIK PUSAT KANTOR & RADIUS MAKSIMAL (Geofencing)
+  // Contoh Koordinat Kantor (Ubah sesuai koordinat asli perusahaan Anda)
+  const KANTOR_LAT = -6.1751; 
+  const KANTOR_LNG = 106.8650;
+  const MAKS_RADIUS_METER = 200; // Toleransi radius 200 meter
 
   useEffect(() => {
     fetchDataKaryawan();
@@ -62,6 +72,9 @@ export default function App() {
       ambilLokasiGPS();
     } else {
       stopCamera();
+      setKaryawanLogin(null);
+      setInputPinKaryawan('');
+      setFotoSnapshot(null);
     }
   }, [role]);
 
@@ -94,9 +107,22 @@ export default function App() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg');
         setFotoSnapshot(dataUrl);
-        alert('Verifikasi wajah / foto berhasil diambil!');
+        alert('Verifikasi wajah berhasil diambil!');
       }
     }
+  };
+
+  // Hitung Jarak Haversine untuk Geofencing GPS
+  const hitungJarakGPS = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3; // Radius bumi dalam meter
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c; // Jarak dalam meter
   };
 
   const ambilLokasiGPS = () => {
@@ -105,7 +131,9 @@ export default function App() {
         (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-          setLokasiUser(`Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`);
+          const jarak = hitungJarakGPS(lat, lng, KANTOR_LAT, KANTOR_LNG);
+          setJarakKantorMeter(Math.round(jarak));
+          setLokasiUser(`Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)} (Jarak ±${Math.round(jarak)}m dari kantor)`);
         },
         () => {
           setLokasiUser('Gagal mendeteksi GPS (Izin lokasi ditolak)');
@@ -126,9 +154,20 @@ export default function App() {
     if (!error && data) setRiwayatAbsen(data);
   };
 
+  const handleLoginPIN = (e: React.FormEvent) => {
+    e.preventDefault();
+    const found = daftarKaryawan.find(k => k.pin === inputPinKaryawan || (!k.pin && inputPinKaryawan === '1234'));
+    if (found) {
+      setKaryawanLogin(found);
+      alert(`Selamat datang, ${found.nama}! Silakan lakukan absensi.`);
+    } else {
+      alert('PIN Karyawan salah! (Coba PIN default: 1234)');
+    }
+  };
+
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'admin123') { // Ubah password admin di sini jika diinginkan
+    if (adminPassword === 'admin123') { // Ganti password admin di sini jika diinginkan
       setRole('admin');
       setActiveTab('riwayat');
     } else {
@@ -149,39 +188,35 @@ export default function App() {
     }
   };
 
-  // Cek Keterlambatan (Batas Jam 08:00 WIB)
   const cekStatusKeterlambatan = (jamMasuk: string, statusPilihan: string) => {
     if (statusPilihan !== 'Hadir') return statusPilihan;
     if (jamMasuk === '-') return 'Hadir';
-    
     try {
       const [jam, menit] = jamMasuk.split(':').map(Number);
       const totalMenitMasuk = jam * 60 + menit;
       const batasMenitNormal = 8 * 60; // Jam 08:00
-
       if (totalMenitMasuk > batasMenitNormal) {
         const selisih = totalMenitMasuk - batasMenitNormal;
         return `Terlambat (${selisih} mnt)`;
       }
-    } catch {
-      // Abaikan jika format jam gagal dibaca
-    }
+    } catch {}
     return 'Hadir';
   };
 
   const handleKirimAbsen = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedKaryawan) {
-      alert('Silakan pilih nama Anda terlebih dahulu.');
+    if (!karyawanLogin) return;
+
+    // Validasi Geofencing Radius Kantor
+    if (jarakKantorMeter !== null && jarakKantorMeter > MAKS_RADIUS_METER) {
+      alert(`GAGAL ABSEN: Anda berada di luar radius kantor! Jarak Anda sekitar ${jarakKantorMeter} meter dari titik kantor (Maksimal ${MAKS_RADIUS_METER}m).`);
       return;
     }
+
     if (!fotoSnapshot) {
       alert('Harap ambil foto verifikasi wajah terlebih dahulu sebelum absen!');
       return;
     }
-
-    const kObj = daftarKaryawan.find(k => k.id === selectedKaryawan);
-    if (!kObj) return;
 
     setLoading(true);
     const now = new Date();
@@ -191,7 +226,7 @@ export default function App() {
     const { data: existingData } = await supabase
       .from('absensi')
       .select('*')
-      .eq('karyawan_id', selectedKaryawan)
+      .eq('karyawan_id', karyawanLogin.id)
       .eq('tanggal', tanggalHariIni)
       .single();
 
@@ -206,10 +241,10 @@ export default function App() {
           .eq('id', existingData.id);
       } else {
         await supabase.from('absensi').insert([{
-          karyawan_id: selectedKaryawan,
-          id_karyawan: kObj.id_karyawan || '-',
-          nama: kObj.nama,
-          jabatan: kObj.jabatan,
+          karyawan_id: karyawanLogin.id,
+          id_karyawan: karyawanLogin.id_karyawan || '-',
+          nama: karyawanLogin.nama,
+          jabatan: karyawanLogin.jabatan,
           tanggal: tanggalHariIni,
           jam_masuk: jamSekarang,
           jam_pulang: '-',
@@ -218,7 +253,7 @@ export default function App() {
           lokasi: lokasiUser
         }]);
       }
-      alert(`Absen Masuk berhasil dicatat untuk ${kObj.nama}! Status: ${statusFinal}`);
+      alert(`Absen Masuk berhasil dicatat untuk ${karyawanLogin.nama}!`);
     } else {
       if (existingData) {
         const total = hitungDurasiJam(existingData.jam_masuk, jamSekarang);
@@ -228,10 +263,10 @@ export default function App() {
           .eq('id', existingData.id);
       } else {
         await supabase.from('absensi').insert([{
-          karyawan_id: selectedKaryawan,
-          id_karyawan: kObj.id_karyawan || '-',
-          nama: kObj.nama,
-          jabatan: kObj.jabatan,
+          karyawan_id: karyawanLogin.id,
+          id_karyawan: karyawanLogin.id_karyawan || '-',
+          nama: karyawanLogin.nama,
+          jabatan: karyawanLogin.jabatan,
           tanggal: tanggalHariIni,
           jam_masuk: '-',
           jam_pulang: jamSekarang,
@@ -240,34 +275,37 @@ export default function App() {
           lokasi: lokasiUser
         }]);
       }
-      alert(`Absen Pulang berhasil dicatat untuk ${kObj.nama}!`);
+      alert(`Absen Pulang berhasil dicatat untuk ${karyawanLogin.nama}!`);
     }
 
     setLoading(false);
     setFotoSnapshot(null);
+    setKaryawanLogin(null);
+    setInputPinKaryawan('');
     fetchDataAbsensi();
   };
 
   const handleTambahKaryawan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!idKaryawanBaru.trim() || !namaBaru.trim() || !jabatanBaru.trim()) {
-      alert('Semua kolom wajib diisi!');
+    if (!idKaryawanBaru.trim() || !namaBaru.trim() || !jabatanBaru.trim() || !pinBaru.trim()) {
+      alert('Semua kolom wajib diisi termasuk PIN!');
       return;
     }
 
     setLoading(true);
     const { error } = await supabase.from('karyawan').insert([
-      { id_karyawan: idKaryawanBaru, nama: namaBaru, jabatan: jabatanBaru }
+      { id_karyawan: idKaryawanBaru, nama: namaBaru, jabatan: jabatanBaru, pin: pinBaru }
     ]);
     setLoading(false);
 
     if (error) {
       alert('Gagal menambahkan karyawan: ' + error.message);
     } else {
-      alert('Karyawan baru berhasil ditambahkan!');
+      alert('Karyawan baru berhasil didaftarkan beserta PIN!');
       setIdKaryawanBaru('');
       setNamaBaru('');
       setJabatanBaru('');
+      setPinBaru('1234');
       fetchDataKaryawan();
     }
   };
@@ -287,9 +325,8 @@ export default function App() {
     }
   };
 
-  // Reset / Bersihkan Riwayat Absensi
   const handleResetRiwayat = async () => {
-    if (window.confirm('PERINGATAN: Semua data riwayat absensi akan dihapus permanen dari database. Lanjutkan?')) {
+    if (window.confirm('PERINGATAN: Semua riwayat absensi akan dihapus permanen. Lanjutkan?')) {
       setLoading(true);
       const { error } = await supabase.from('absensi').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       setLoading(false);
@@ -303,7 +340,87 @@ export default function App() {
     }
   };
 
-  // Filter & Pencarian Data Absen
+  // Cetak Laporan PDF Berlogo Perusahaan
+  const handleCetakPDF = () => {
+    const printWindow = window.open('', '', 'height=700,width=900');
+    if (!printWindow) return;
+
+    let htmlContent = `
+      <html>
+        <head>
+          <title>Laporan Rekapitulasi Absensi Perusahaan</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+            .header { text-align: center; border-bottom: 3px double #333; padding-bottom: 10px; margin-bottom: 20px; }
+            .header h1 { margin: 0; font-size: 22px; color: #1e3a8a; }
+            .header p { margin: 4px 0; font-size: 13px; color: #666; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+            th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+            th { background-color: #f3f4f6; color: #111; }
+            .footer { margin-top: 40px; display: flex; justify-content: space-between; font-size: 13px; }
+            .sign { text-align: center; margin-top: 60px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>PT. PERUSAHAAN ENTERPRISE INDONESIA</h1>
+            <p>Jl. Jendral Sudirman Kav. 52-53, Jakarta Pusat | Telp: (021) 555-8899</p>
+            <p><b>LAPORAN RESMI REKAPITULASI KEHADIRAN KARYAWAN</b></p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Tanggal</th>
+                <th>Nama Karyawan</th>
+                <th>Jabatan</th>
+                <th>Masuk</th>
+                <th>Pulang</th>
+                <th>Total Kerja</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
+    filteredAbsen.forEach(r => {
+      htmlContent += `
+        <tr>
+          <td>${r.id_karyawan || '-'}</td>
+          <td>${r.tanggal}</td>
+          <td><b>${r.nama}</b></td>
+          <td>${r.jabatan}</td>
+          <td>${r.jam_masuk}</td>
+          <td>${r.jam_pulang}</td>
+          <td>${r.total_jam}</td>
+          <td>${r.status}</td>
+        </tr>
+      `;
+    });
+
+    htmlContent += `
+            </tbody>
+          </table>
+          <div class="footer">
+            <div></div>
+            <div class="sign">
+              <p>Jakarta, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              <br><br><br>
+              <p><b>HRD & Operational Manager</b></p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
+  };
+
   const filteredAbsen = riwayatAbsen.filter(item => {
     const matchSearch = item.nama.toLowerCase().includes(searchQuery.toLowerCase()) || 
                         (item.id_karyawan && item.id_karyawan.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -311,7 +428,6 @@ export default function App() {
     return matchSearch && matchTanggal;
   });
 
-  // Statistik Ringkasan Harian
   const totalHadir = riwayatAbsen.filter(r => r.status.includes('Hadir')).length;
   const totalTerlambat = riwayatAbsen.filter(r => r.status.includes('Terlambat')).length;
   const totalIzinSakit = riwayatAbsen.filter(r => r.status === 'Izin' || r.status === 'Sakit' || r.status === 'Cuti').length;
@@ -358,15 +474,15 @@ export default function App() {
         {/* PILIH ROLE */}
         {role === 'pilih' && (
           <div style={{ textAlign: 'center', padding: '30px 10px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢✨</div>
-            <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Enterprise Perusahaan</h1>
-            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Dilengkapi GPS, Wajah, Statistik Harian, & Deteksi Keterlambatan Otomatis</p>
+            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢🛡️</div>
+            <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Enterprise Terpadu</h1>
+            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Dilengkapi PIN Keamanan Karyawan, Geofencing Radius Kantor, & Cetak PDF Resmi</p>
             
             <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap' }}>
               <button 
                 onClick={() => setRole('karyawan')}
                 style={{ 
-                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100आरआई)', 
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', 
                   color: 'white', 
                   padding: '18px 32px', 
                   borderRadius: '12px', 
@@ -399,15 +515,45 @@ export default function App() {
           </div>
         )}
 
-        {/* PORTAL KARYAWAN */}
-        {role === 'karyawan' && (
+        {/* PORTAL KARYAWAN DENGAN LOGIN PIN */}
+        {role === 'karyawan' && !karyawanLogin && (
+          <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px' }}>Autentikasi PIN Karyawan</h2>
+              <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>← Kembali</button>
+            </div>
+            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>Masukkan PIN rahasia Anda untuk membuka menu absensi harian.</p>
+            
+            <form onSubmit={handleLoginPIN} style={{ maxWidth: '320px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input 
+                type="password" 
+                maxLength={6}
+                placeholder="Masukkan PIN Rahasia..." 
+                value={inputPinKaryawan}
+                onChange={(e) => setInputPinKaryawan(e.target.value)}
+                style={{ padding: '14px', textAlign: 'center', fontSize: '18px', letterSpacing: '4px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+              />
+              <button type="submit" style={{ background: '#2563eb', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
+                Masuk Absensi
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* FORM ABSEN KARYAWAN SETELAH LOGIN PIN */}
+        {role === 'karyawan' && karyawanLogin && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <div>
-                <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Absensi Kehadiran & Verifikasi Wajah</h2>
-                <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>Lokasi Anda: <strong style={{ color: '#0284c7' }}>{lokasiUser}</strong></p>
+                <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Halo, {karyawanLogin.nama} ({karyawanLogin.jabatan})</h2>
+                <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>Lokasi: <strong style={{ color: '#0284c7' }}>{lokasiUser}</strong></p>
+                {jarakKantorMeter !== null && (
+                  <p style={{ margin: '2px 0 0 0', fontSize: '12px', fontWeight: 'bold', color: jarakKantorMeter <= MAKS_RADIUS_METER ? '#16a34a' : '#dc2626' }}>
+                    {jarakKantorMeter <= MAKS_RADIUS_METER ? `✔ Dalam Radius Kantor (±${jarakKantorMeter}m)` : `❌ Di Luar Radius Kantor (±${jarakKantorMeter}m > ${MAKS_RADIUS_METER}m)`}
+                  </p>
+                )}
               </div>
-              <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>← Kembali</button>
+              <button onClick={() => setKaryawanLogin(null)} style={{ background: '#64748b', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Ganti PIN</button>
             </div>
 
             <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -436,22 +582,6 @@ export default function App() {
                 </button>
               </div>
               <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#334155' }}>Pilih Nama / ID Karyawan:</label>
-                <select 
-                  value={selectedKaryawan} 
-                  onChange={(e) => setSelectedKaryawan(e.target.value)}
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px', background: '#fff' }}
-                >
-                  <option value="">-- Pilih Karyawan --</option>
-                  {daftarKaryawan.map(k => (
-                    <option key={k.id} value={k.id}>
-                      [{k.id_karyawan || 'ID-'}] {k.nama} — {k.jabatan}
-                    </option>
-                  ))}
-                </select>
-              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div>
@@ -486,24 +616,24 @@ export default function App() {
                 disabled={loading}
                 style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', color: 'white', padding: '14px', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '10px', boxShadow: '0 4px 10px rgba(37, 99, 235, 0.3)' }}
               >
-                {loading ? 'Menyimpan...' : `Kirim Absen ${jenisAbsen} (Dengan GPS & Wajah)`}
+                {loading ? 'Menyimpan...' : `Kirim Absen ${jenisAbsen} (Dengan Geofencing GPS)`}
               </button>
             </form>
           </div>
         )}
 
-        {/* DASHBOARD ADMIN EKSEKUTIF */}
+        {/* DASHBOARD ADMIN ENTERPRISE */}
         {role === 'admin' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <div>
                 <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Dashboard Admin Enterprise</h2>
-                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase (Real-Time)</span>
+                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase (PIN & Geofencing Active)</span>
               </div>
               <button onClick={() => setRole('pilih')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Logout Admin</button>
             </div>
 
-            {/* KARTU STATISTIK RINGKASAN HARIAN */}
+            {/* KARTU STATISTIK */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
               <div style={{ background: '#eff6ff', padding: '16px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
                 <span style={{ color: '#1e40af', fontSize: '13px', fontWeight: 'bold' }}>Total Karyawan</span>
@@ -534,53 +664,60 @@ export default function App() {
                 onClick={() => setActiveTab('karyawan')}
                 style={{ padding: '10px 18px', background: activeTab === 'karyawan' ? '#2563eb' : '#f1f5f9', color: activeTab === 'karyawan' ? 'white' : '#475569', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
               >
-                👥 Kelola Karyawan (50+)
+                👥 Kelola Karyawan & PIN
               </button>
             </div>
 
-            {/* TAB REKAP DENGAN PENCARIAN & FILTER */}
+            {/* TAB REKAP DENGAN PENCARIAN, EXCEL & CETAK PDF */}
             {activeTab === 'riwayat' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
                   
-                  {/* KOTAK PENCARIAN & FILTER TANGGAL */}
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', flex: 1 }}>
                     <input 
                       type="text" 
                       placeholder="🔍 Cari Nama / ID Karyawan..." 
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minWidth: '220px' }}
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minWidth: '200px' }}
                     />
                     <input 
                       type="text" 
                       placeholder="📅 Filter Tanggal (Cth: 10/06)..." 
                       value={filterTanggal}
                       onChange={(e) => setFilterTanggal(e.target.value)}
-                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minWidth: '180px' }}
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minWidth: '160px' }}
                     />
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {filteredAbsen.length > 0 && (
-                      <button 
-                        onClick={exportToExcel}
-                        style={{ backgroundColor: '#10b981', color: 'white', padding: '8px 14px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
-                      >
-                        📥 Download Excel
-                      </button>
+                      <>
+                        <button 
+                          onClick={exportToExcel}
+                          style={{ backgroundColor: '#10b981', color: 'white', padding: '8px 12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
+                        >
+                          📥 Excel
+                        </button>
+                        <button 
+                          onClick={handleCetakPDF}
+                          style={{ backgroundColor: '#0284c7', color: 'white', padding: '8px 12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
+                        >
+                          🖨️ Cetak PDF Resmi
+                        </button>
+                      </>
                     )}
                     <button 
                       onClick={handleResetRiwayat}
-                      style={{ backgroundColor: '#ef4444', color: 'white', padding: '8px 14px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
+                      style={{ backgroundColor: '#ef4444', color: 'white', padding: '8px 12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
                     >
-                      🗑️ Bersihkan Riwayat
+                      🗑️ Reset
                     </button>
                   </div>
                 </div>
 
                 {filteredAbsen.length === 0 ? (
-                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: '40px' }}>Tidak ada data absensi yang cocok dengan pencarian.</p>
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: '40px' }}>Tidak ada data absensi yang cocok.</p>
                 ) : (
                   <div style={{ overflowX: 'auto', maxHeight: '400px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
@@ -626,18 +763,28 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB KELOLA KARYAWAN */}
+            {/* TAB KELOLA KARYAWAN & PIN */}
             {activeTab === 'karyawan' && (
               <div>
-                <h3 style={{ fontSize: '16px', color: '#334155', marginBottom: '12px' }}>Pendaftaran Karyawan Baru (50+ Pegawai)</h3>
+                <h3 style={{ fontSize: '16px', color: '#334155', marginBottom: '12px' }}>Pendaftaran Karyawan Baru & PIN Keamanan</h3>
                 <form onSubmit={handleTambahKaryawan} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <input 
-                    type="text" 
-                    placeholder="ID Karyawan / NIP (Contoh: EMP001)..." 
-                    value={idKaryawanBaru} 
-                    onChange={(e) => setIdKaryawanBaru(e.target.value)} 
-                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <input 
+                      type="text" 
+                      placeholder="ID Karyawan / NIP (Cth: EMP001)..." 
+                      value={idKaryawanBaru} 
+                      onChange={(e) => setIdKaryawanBaru(e.target.value)} 
+                      style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    />
+                    <input 
+                      type="password" 
+                      maxLength={6}
+                      placeholder="PIN Login (Cth: 1234)..." 
+                      value={pinBaru} 
+                      onChange={(e) => setPinBaru(e.target.value)} 
+                      style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    />
+                  </div>
                   <input 
                     type="text" 
                     placeholder="Nama Lengkap Karyawan..." 
@@ -667,7 +814,7 @@ export default function App() {
                             {k.id_karyawan || 'ID-'}
                           </span>
                           <div>
-                            <strong style={{ color: '#1e293b', display: 'block' }}>{k.nama}</strong>
+                            <strong style={{ color: '#1e293b', display: 'block' }}>{k.nama} <span style={{ fontSize: '11px', color: '#64748b' }}>(PIN: {k.pin || '1234'})</span></strong>
                             <span style={{ color: '#64748b', fontSize: '12px' }}>{k.jabatan}</span>
                           </div>
                         </div>
