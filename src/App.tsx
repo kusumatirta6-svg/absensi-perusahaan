@@ -13,6 +13,7 @@ interface Absen {
   tanggal: string;
   jamMasuk: string;
   jamPulang: string;
+  totalJam: string;
   status: string;
 }
 
@@ -52,6 +53,28 @@ export default function App() {
     localStorage.setItem('riwayat_absen', JSON.stringify(riwayatAbsen));
   }, [riwayatAbsen]);
 
+  // Helper untuk menghitung durasi jam kerja
+  const hitungDurasiJam = (masuk: string, pulang: string) => {
+    if (masuk === '-' || pulang === '-') return '-';
+    try {
+      const [jamM, menitM] = masuk.split(':').map(Number);
+      const [jamP, menitP] = pulang.split(':').map(Number);
+      
+      const totalMenitMasuk = jamM * 60 + menitM;
+      const totalMenitPulang = jamP * 60 + menitP;
+      
+      let selisihMenit = totalMenitPulang - totalMenitMasuk;
+      if (selisihMenit < 0) selisihMenit = 0; // Jika jam pulang mendahului
+      
+      const jam = Math.floor(selisihMenit / 60);
+      const menit = selisihMenit % 60;
+      
+      return `${jam} jam ${menit} menit`;
+    } catch {
+      return '-';
+    }
+  };
+
   // Tambah Karyawan
   const handleTambahKaryawan = (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,23 +108,21 @@ export default function App() {
     const jamSekarang = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     if (jenisAbsen === 'Masuk') {
-      // Cek apakah sudah ada absen masuk untuk hari ini
       const sudahAbsenMasuk = riwayatAbsen.find(
         r => r.id === selectedKaryawan && r.tanggal === tanggalHariIni
       );
 
       if (sudahAbsenMasuk) {
-        // Update jam masuk jika sudah ada record-nya
         const updated = riwayatAbsen.map(r => {
           if (r.id === selectedKaryawan && r.tanggal === tanggalHariIni) {
-            return { ...r, jamMasuk: jamSekarang, status: statusAbsen };
+            const total = hitungDurasiJam(jamSekarang, r.jamPulang);
+            return { ...r, jamMasuk: jamSekarang, totalJam: total, status: statusAbsen };
           }
           return r;
         });
         setRiwayatAbsen(updated);
         alert(`Jam Masuk diperbarui untuk ${karyawanObj.nama}`);
       } else {
-        // Buat record baru untuk hari ini
         const absenBaru: Absen = {
           id: selectedKaryawan,
           nama: karyawanObj.nama,
@@ -109,6 +130,7 @@ export default function App() {
           tanggal: tanggalHariIni,
           jamMasuk: jamSekarang,
           jamPulang: '-',
+          totalJam: '-',
           status: statusAbsen
         };
         setRiwayatAbsen([absenBaru, ...riwayatAbsen]);
@@ -123,10 +145,10 @@ export default function App() {
       if (indexExist !== -1) {
         const updated = [...riwayatAbsen];
         updated[indexExist].jamPulang = jamSekarang;
+        updated[indexExist].totalJam = hitungDurasiJam(updated[indexExist].jamMasuk, jamSekarang);
         setRiwayatAbsen(updated);
         alert(`Absen Pulang berhasil dicatat untuk ${karyawanObj.nama}!`);
       } else {
-        // Jika belum absen masuk tapi langsung absen pulang
         const absenBaru: Absen = {
           id: selectedKaryawan,
           nama: karyawanObj.nama,
@@ -134,6 +156,7 @@ export default function App() {
           tanggal: tanggalHariIni,
           jamMasuk: '-',
           jamPulang: jamSekarang,
+          totalJam: '-',
           status: statusAbsen
         };
         setRiwayatAbsen([absenBaru, ...riwayatAbsen]);
@@ -142,22 +165,22 @@ export default function App() {
     }
   };
 
-  // Fungsi Ekspor ke Excel dengan Pemisah Titik Koma (;) agar rapi di Excel Indonesia
+  // Fungsi Ekspor ke Excel (CSV)
   const exportToExcel = () => {
     if (riwayatAbsen.length === 0) {
       alert('Belum ada data riwayat untuk diekspor.');
       return;
     }
 
-    let csvContent = "data:text/csv;charset=utf-8,Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Status\n";
+    let csvContent = "data:text/csv;charset=utf-8,Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Status\n";
     riwayatAbsen.forEach(row => {
-      csvContent += `"${row.nama}";"${row.jabatan}";${row.tanggal};${row.jamMasuk};${row.jamPulang};${row.status}\n`;
+      csvContent += `"${row.nama}";"${row.jabatan}";${row.tanggal};${row.jamMasuk};${row.jamPulang};"${row.totalJam}";${row.status}\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Rekap_Absensi_${new Date().toLocaleDateString('id-ID')}.csv`);
+    link.setAttribute("download", `Rekap_Absensi_Jam_Kerja_${new Date().toLocaleDateString('id-ID')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -165,10 +188,10 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '20px', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+      <div style={{ maxWidth: '850px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
         
-        <h1 style={{ color: '#1f2937', textAlign: 'center', marginBottom: '4px', fontSize: '24px' }}>Sistem Absensi Perusahaan Profesional</h1>
-        <p style={{ color: '#4b5563', textAlign: 'center', marginBottom: '20px', fontSize: '14px' }}>Kelola jam masuk, jam pulang, dan data karyawan</p>
+        <h1 style={{ color: '#1f2937', textAlign: 'center', marginBottom: '4px', fontSize: '24px' }}>Sistem Absensi & Jam Kerja Perusahaan</h1>
+        <p style={{ color: '#4b5563', textAlign: 'center', marginBottom: '20px', fontSize: '14px' }}>Pencatatan Masuk, Pulang, dan Total Durasi Kerja Otomatis</p>
 
         <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
           <button 
@@ -191,7 +214,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* TAB 1: FORM ABSEN MASUK & PULANG */}
+        {/* TAB 1: FORM ABSEN */}
         {activeTab === 'absen' && (
           <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <h2 style={{ fontSize: '18px', color: '#1f2937' }}>Catat Kehadiran (Masuk / Pulang)</h2>
@@ -296,13 +319,13 @@ export default function App() {
         {activeTab === 'riwayat' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '18px', color: '#1f2937', margin: 0 }}>Rekapitulasi Kehadiran</h2>
+              <h2 style={{ fontSize: '18px', color: '#1f2937', margin: 0 }}>Rekapitulasi & Jam Kerja</h2>
               {riwayatAbsen.length > 0 && (
                 <button 
                   onClick={exportToExcel}
                   style={{ backgroundColor: '#15803d', color: 'white', padding: '8px 14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}
                 >
-                  📥 Download ke Excel (Rapi Kolom)
+                  📥 Download Excel (Dengan Total Jam Kerja)
                 </button>
               )}
             </div>
@@ -311,28 +334,30 @@ export default function App() {
               <p style={{ color: '#9ca3af', textAlign: 'center', padding: '20px 0' }}>Belum ada catatan absensi masuk atau pulang.</p>
             ) : (
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
-                      <th style={{ padding: '10px' }}>Tanggal</th>
-                      <th style={{ padding: '10px' }}>Nama</th>
-                      <th style={{ padding: '10px' }}>Jabatan</th>
-                      <th style={{ padding: '10px' }}>Jam Masuk</th>
-                      <th style={{ padding: '10px' }}>Jam Pulang</th>
-                      <th style={{ padding: '10px' }}>Status</th>
+                      <th style={{ padding: '8px' }}>Tanggal</th>
+                      <th style={{ padding: '8px' }}>Nama</th>
+                      <th style={{ padding: '8px' }}>Jabatan</th>
+                      <th style={{ padding: '8px' }}>Masuk</th>
+                      <th style={{ padding: '8px' }}>Pulang</th>
+                      <th style={{ padding: '8px' }}>Total Kerja</th>
+                      <th style={{ padding: '8px' }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {riwayatAbsen.map((item, index) => (
                       <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        <td style={{ padding: '10px', color: '#4b5563' }}>{item.tanggal}</td>
-                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{item.nama}</td>
-                        <td style={{ padding: '10px', color: '#6b7280' }}>{item.jabatan}</td>
-                        <td style={{ padding: '10px', color: '#2563eb', fontWeight: 'bold' }}>{item.jamMasuk}</td>
-                        <td style={{ padding: '10px', color: '#9333ea', fontWeight: 'bold' }}>{item.jamPulang}</td>
-                        <td style={{ padding: '10px' }}>
+                        <td style={{ padding: '8px', color: '#4b5563' }}>{item.tanggal}</td>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.nama}</td>
+                        <td style={{ padding: '8px', color: '#6b7280' }}>{item.jabatan}</td>
+                        <td style={{ padding: '8px', color: '#2563eb', fontWeight: 'bold' }}>{item.jamMasuk}</td>
+                        <td style={{ padding: '8px', color: '#9333ea', fontWeight: 'bold' }}>{item.jamPulang}</td>
+                        <td style={{ padding: '8px', color: '#047857', fontWeight: 'bold' }}>{item.totalJam}</td>
+                        <td style={{ padding: '8px' }}>
                           <span style={{ 
-                            padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold',
+                            padding: '3px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold',
                             backgroundColor: item.status === 'Hadir' ? '#dcfce7' : '#fef9c3',
                             color: item.status === 'Hadir' ? '#166534' : '#854d0e'
                           }}>
