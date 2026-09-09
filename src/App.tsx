@@ -44,7 +44,6 @@ export default function App() {
 
   // Fitur GPS & Kamera State
   const [lokasiUser, setLokasiUser] = useState<string>('Mendeteksi lokasi...');
-  const [koordinat, setKoordinat] = useState<{lat: number, lng: number} | null>(null);
   const [fotoSnapshot, setFotoSnapshot] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,7 +53,6 @@ export default function App() {
     fetchDataAbsensi();
   }, []);
 
-  // Aktifkan Kamera saat masuk menu Karyawan
   useEffect(() => {
     if (role === 'karyawan') {
       startCamera();
@@ -104,7 +102,6 @@ export default function App() {
         (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-          setKoordinat({ lat, lng });
           setLokasiUser(`Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`);
         },
         () => {
@@ -128,7 +125,7 @@ export default function App() {
 
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'admin123') { // Ganti password admin jika diinginkan
+    if (adminPassword === 'admin123') {
       setRole('admin');
       setActiveTab('riwayat');
     } else {
