@@ -10,9 +10,10 @@ interface Absen {
   id: string;
   nama: string;
   jabatan: string;
-  status: string;
-  waktu: string;
   tanggal: string;
+  jamMasuk: string;
+  jamPulang: string;
+  status: string;
 }
 
 export default function App() {
@@ -39,9 +40,10 @@ export default function App() {
 
   // Input Form Absen
   const [selectedKaryawan, setSelectedKaryawan] = useState('');
+  const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
 
-  // Simpan ke LocalStorage setiap ada perubahan
+  // Simpan ke LocalStorage
   useEffect(() => {
     localStorage.setItem('daftar_karyawan', JSON.stringify(daftarKaryawan));
   }, [daftarKaryawan]);
@@ -67,7 +69,7 @@ export default function App() {
     alert('Karyawan berhasil didaftarkan!');
   };
 
-  // Kirim Absen
+  // Kirim Absen (Masuk / Pulang)
   const handleKirimAbsen = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedKaryawan) {
@@ -79,29 +81,77 @@ export default function App() {
     if (!karyawanObj) return;
 
     const now = new Date();
-    const absenBaru: Absen = {
-      id: Date.now().toString(),
-      nama: karyawanObj.nama,
-      jabatan: karyawanObj.jabatan,
-      status: statusAbsen,
-      waktu: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-      tanggal: now.toLocaleDateString('id-ID')
-    };
+    const tanggalHariIni = now.toLocaleDateString('id-ID');
+    const jamSekarang = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-    setRiwayatAbsen([absenBaru, ...riwayatAbsen]);
-    alert(`Absen berhasil dicatat untuk ${karyawanObj.nama}!`);
+    if (jenisAbsen === 'Masuk') {
+      // Cek apakah sudah ada absen masuk untuk hari ini
+      const sudahAbsenMasuk = riwayatAbsen.find(
+        r => r.id === selectedKaryawan && r.tanggal === tanggalHariIni
+      );
+
+      if (sudahAbsenMasuk) {
+        // Update jam masuk jika sudah ada record-nya
+        const updated = riwayatAbsen.map(r => {
+          if (r.id === selectedKaryawan && r.tanggal === tanggalHariIni) {
+            return { ...r, jamMasuk: jamSekarang, status: statusAbsen };
+          }
+          return r;
+        });
+        setRiwayatAbsen(updated);
+        alert(`Jam Masuk diperbarui untuk ${karyawanObj.nama}`);
+      } else {
+        // Buat record baru untuk hari ini
+        const absenBaru: Absen = {
+          id: selectedKaryawan,
+          nama: karyawanObj.nama,
+          jabatan: karyawanObj.jabatan,
+          tanggal: tanggalHariIni,
+          jamMasuk: jamSekarang,
+          jamPulang: '-',
+          status: statusAbsen
+        };
+        setRiwayatAbsen([absenBaru, ...riwayatAbsen]);
+        alert(`Absen Masuk berhasil dicatat untuk ${karyawanObj.nama}!`);
+      }
+    } else {
+      // Absen Pulang
+      const indexExist = riwayatAbsen.findIndex(
+        r => r.id === selectedKaryawan && r.tanggal === tanggalHariIni
+      );
+
+      if (indexExist !== -1) {
+        const updated = [...riwayatAbsen];
+        updated[indexExist].jamPulang = jamSekarang;
+        setRiwayatAbsen(updated);
+        alert(`Absen Pulang berhasil dicatat untuk ${karyawanObj.nama}!`);
+      } else {
+        // Jika belum absen masuk tapi langsung absen pulang
+        const absenBaru: Absen = {
+          id: selectedKaryawan,
+          nama: karyawanObj.nama,
+          jabatan: karyawanObj.jabatan,
+          tanggal: tanggalHariIni,
+          jamMasuk: '-',
+          jamPulang: jamSekarang,
+          status: statusAbsen
+        };
+        setRiwayatAbsen([absenBaru, ...riwayatAbsen]);
+        alert(`Absen Pulang dicatat (Tanpa data masuk awal) untuk ${karyawanObj.nama}!`);
+      }
+    }
   };
 
-  // Fungsi Ekspor ke Excel (CSV)
+  // Fungsi Ekspor ke Excel dengan Pemisah Titik Koma (;) agar rapi di Excel Indonesia
   const exportToExcel = () => {
     if (riwayatAbsen.length === 0) {
       alert('Belum ada data riwayat untuk diekspor.');
       return;
     }
 
-    let csvContent = "data:text/csv;charset=utf-8,ID,Nama Karyawan,Jabatan,Status,Tanggal,Waktu\n";
+    let csvContent = "data:text/csv;charset=utf-8,Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Status\n";
     riwayatAbsen.forEach(row => {
-      csvContent += `${row.id},"${row.nama}","${row.jabatan}",${row.status},${row.tanggal},${row.waktu}\n`;
+      csvContent += `"${row.nama}";"${row.jabatan}";${row.tanggal};${row.jamMasuk};${row.jamPulang};${row.status}\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -115,11 +165,10 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '20px', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '750px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+      <div style={{ maxWidth: '800px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
         
-        {/* Header & Navigasi Tab */}
         <h1 style={{ color: '#1f2937', textAlign: 'center', marginBottom: '4px', fontSize: '24px' }}>Sistem Absensi Perusahaan Profesional</h1>
-        <p style={{ color: '#4b5563', textAlign: 'center', marginBottom: '20px', fontSize: '14px' }}>Kelola kehadiran dan data karyawan dengan mudah</p>
+        <p style={{ color: '#4b5563', textAlign: 'center', marginBottom: '20px', fontSize: '14px' }}>Kelola jam masuk, jam pulang, dan data karyawan</p>
 
         <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
           <button 
@@ -142,12 +191,13 @@ export default function App() {
           </button>
         </div>
 
-        {/* TAB 1: FORM ABSEN */}
+        {/* TAB 1: FORM ABSEN MASUK & PULANG */}
         {activeTab === 'absen' && (
           <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h2 style={{ fontSize: '18px', color: '#1f2937' }}>Catat Kehadiran Hari Ini</h2>
+            <h2 style={{ fontSize: '18px', color: '#1f2937' }}>Catat Kehadiran (Masuk / Pulang)</h2>
+            
             <div>
-              <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Pilih Nama Karyawan:</label>
+              <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Pilih Karyawan:</label>
               <select 
                 value={selectedKaryawan} 
                 onChange={(e) => setSelectedKaryawan(e.target.value)}
@@ -160,25 +210,39 @@ export default function App() {
               </select>
             </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Status Kehadiran:</label>
-              <select 
-                value={statusAbsen} 
-                onChange={(e) => setStatusAbsen(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
-              >
-                <option value="Hadir">Hadir</option>
-                <option value="Izin">Izin</option>
-                <option value="Sakit">Sakit</option>
-                <option value="Cuti">Cuti</option>
-              </select>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Jenis Absen:</label>
+                <select 
+                  value={jenisAbsen} 
+                  onChange={(e) => setJenisAbsen(e.target.value as 'Masuk' | 'Pulang')}
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
+                >
+                  <option value="Masuk">Absen Masuk</option>
+                  <option value="Pulang">Absen Pulang</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Status:</label>
+                <select 
+                  value={statusAbsen} 
+                  onChange={(e) => setStatusAbsen(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
+                >
+                  <option value="Hadir">Hadir</option>
+                  <option value="Izin">Izin</option>
+                  <option value="Sakit">Sakit</option>
+                  <option value="Cuti">Cuti</option>
+                </select>
+              </div>
             </div>
 
             <button 
               type="submit" 
-              style={{ backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
+              style={{ backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}
             >
-              Kirim Absen Sekarang
+              Simpan Absen {jenisAbsen}
             </button>
           </form>
         )}
@@ -228,39 +292,44 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 3: RIWAYAT & EKSPOR EXCEL */}
+        {/* TAB 3: RIWAYAT & EXCEL */}
         {activeTab === 'riwayat' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '18px', color: '#1f2937', margin: 0 }}>Riwayat Kehadiran</h2>
+              <h2 style={{ fontSize: '18px', color: '#1f2937', margin: 0 }}>Rekapitulasi Kehadiran</h2>
               {riwayatAbsen.length > 0 && (
                 <button 
                   onClick={exportToExcel}
                   style={{ backgroundColor: '#15803d', color: 'white', padding: '8px 14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}
                 >
-                  📥 Download ke Excel (CSV)
+                  📥 Download ke Excel (Rapi Kolom)
                 </button>
               )}
             </div>
 
             {riwayatAbsen.length === 0 ? (
-              <p style={{ color: '#9ca3af', textAlign: 'center', padding: '20px 0' }}>Belum ada catatan absensi masuk.</p>
+              <p style={{ color: '#9ca3af', textAlign: 'center', padding: '20px 0' }}>Belum ada catatan absensi masuk atau pulang.</p>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                   <thead>
                     <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
+                      <th style={{ padding: '10px' }}>Tanggal</th>
                       <th style={{ padding: '10px' }}>Nama</th>
                       <th style={{ padding: '10px' }}>Jabatan</th>
+                      <th style={{ padding: '10px' }}>Jam Masuk</th>
+                      <th style={{ padding: '10px' }}>Jam Pulang</th>
                       <th style={{ padding: '10px' }}>Status</th>
-                      <th style={{ padding: '10px' }}>Waktu</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {riwayatAbsen.map((item) => (
-                      <tr key={item.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    {riwayatAbsen.map((item, index) => (
+                      <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                        <td style={{ padding: '10px', color: '#4b5563' }}>{item.tanggal}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold' }}>{item.nama}</td>
                         <td style={{ padding: '10px', color: '#6b7280' }}>{item.jabatan}</td>
+                        <td style={{ padding: '10px', color: '#2563eb', fontWeight: 'bold' }}>{item.jamMasuk}</td>
+                        <td style={{ padding: '10px', color: '#9333ea', fontWeight: 'bold' }}>{item.jamPulang}</td>
                         <td style={{ padding: '10px' }}>
                           <span style={{ 
                             padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold',
@@ -270,7 +339,6 @@ export default function App() {
                             {item.status}
                           </span>
                         </td>
-                        <td style={{ padding: '10px', color: '#4b5563' }}>{item.tanggal} - {item.waktu}</td>
                       </tr>
                     ))}
                   </tbody>
