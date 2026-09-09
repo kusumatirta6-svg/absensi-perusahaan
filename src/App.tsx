@@ -40,7 +40,6 @@ export default function App() {
   const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
 
-  // Ambil Data dari Supabase saat pertama kali buka
   useEffect(() => {
     fetchDataKaryawan();
     fetchDataAbsensi();
@@ -48,22 +47,17 @@ export default function App() {
 
   const fetchDataKaryawan = async () => {
     const { data, error } = await supabase.from('karyawan').select('*').order('nama', { ascending: true });
-    if (!error && data) {
-      setDaftarKaryawan(data);
-    }
+    if (!error && data) setDaftarKaryawan(data);
   };
 
   const fetchDataAbsensi = async () => {
     const { data, error } = await supabase.from('absensi').select('*').order('created_at', { ascending: false });
-    if (!error && data) {
-      setRiwayatAbsen(data);
-    }
+    if (!error && data) setRiwayatAbsen(data);
   };
 
-  // Login Admin (Ganti 'admin123' dengan password rahasia Anda)
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'Moon1729') {
+    if (adminPassword === 'admin123') { // Ganti password admin di sini jika ingin
       setRole('admin');
       setActiveTab('riwayat');
     } else {
@@ -71,7 +65,6 @@ export default function App() {
     }
   };
 
-  // Helper Hitung Durasi Jam Kerja
   const hitungDurasiJam = (masuk: string, pulang: string) => {
     if (masuk === '-' || pulang === '-') return '-';
     try {
@@ -85,7 +78,6 @@ export default function App() {
     }
   };
 
-  // Kirim Absen (Masuk / Pulang) secara Real-time ke Supabase
   const handleKirimAbsen = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedKaryawan) {
@@ -101,7 +93,6 @@ export default function App() {
     const tanggalHariIni = now.toLocaleDateString('id-ID');
     const jamSekarang = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-    // Cek apakah sudah ada absen untuk hari ini
     const { data: existingData } = await supabase
       .from('absensi')
       .select('*')
@@ -131,7 +122,6 @@ export default function App() {
       }
       alert(`Absen Masuk berhasil dicatat, ${kObj.nama}!`);
     } else {
-      // Pulang
       if (existingData) {
         const total = hitungDurasiJam(existingData.jam_masuk, jamSekarang);
         await supabase
@@ -158,7 +148,6 @@ export default function App() {
     fetchDataAbsensi();
   };
 
-  // Tambah Karyawan Baru dengan ID Karyawan / NIP
   const handleTambahKaryawan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idKaryawanBaru.trim() || !namaBaru.trim() || !jabatanBaru.trim()) {
@@ -175,7 +164,7 @@ export default function App() {
     if (error) {
       alert('Gagal menambahkan karyawan: ' + error.message);
     } else {
-      alert('Karyawan baru dengan ID berhasil ditambahkan!');
+      alert('Karyawan baru berhasil ditambahkan!');
       setIdKaryawanBaru('');
       setNamaBaru('');
       setJabatanBaru('');
@@ -183,7 +172,6 @@ export default function App() {
     }
   };
 
-  // Download Excel Khusus Admin (Dengan Kolom ID Karyawan di Depan)
   const exportToExcel = () => {
     if (riwayatAbsen.length === 0) {
       alert('Belum ada data absensi.');
@@ -196,42 +184,70 @@ export default function App() {
     });
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csv));
-    link.setAttribute("download", `Rekap_Absensi_ID_${new Date().toLocaleDateString('id-ID')}.csv`);
+    link.setAttribute("download", `Rekap_Absensi_${new Date().toLocaleDateString('id-ID')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '20px', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '900px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+    <div style={{ 
+      minHeight: '100vh', 
+      background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #93c5fd 100%)', 
+      padding: '40px 20px', 
+      fontFamily: 'Inter, system-ui, sans-serif',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center'
+    }}>
+      <div style={{ 
+        width: '100%',
+        maxWidth: '900px', 
+        background: 'rgba(255, 255, 255, 0.95)', 
+        backdropFilter: 'blur(10px)',
+        padding: '32px', 
+        borderRadius: '20px', 
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' 
+      }}>
         
-        {/* PEMILIHAN PERAN */}
+        {/* PILIH ROLE */}
         {role === 'pilih' && (
-          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <h1 style={{ color: '#1f2937', marginBottom: '8px' }}>Sistem Absensi Perusahaan Profesional</h1>
-            <p style={{ color: '#6b7280', marginBottom: '32px' }}>Dilengkapi ID Karyawan / NIP, Real-Time Cloud, & Portal Admin</p>
+          <div style={{ textAlign: 'center', padding: '30px 10px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢</div>
+            <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Perusahaan</h1>
+            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Platform pencatatan kehadiran modern, real-time, dan terintegrasi</p>
             
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap' }}>
               <button 
                 onClick={() => setRole('karyawan')}
-                style={{ background: '#2563eb', color: 'white', padding: '16px 32px', borderRadius: '8px', border: 'none', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+                style={{ 
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', 
+                  color: 'white', 
+                  padding: '18px 32px', 
+                  borderRadius: '12px', 
+                  border: 'none', 
+                  fontSize: '16px', 
+                  fontWeight: 'bold', 
+                  cursor: 'pointer', 
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                  transition: 'transform 0.2s'
+                }}
               >
                 👤 Masuk sebagai Karyawan
               </button>
               
-              <div style={{ background: '#f9fafb', padding: '16px', borderRadius: '8px', border: '1px solid #d1d5db', textAlign: 'left' }}>
-                <form onSubmit={handleLoginAdmin} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '14px', color: '#374151' }}>🔐 Login Khusus Admin:</label>
+              <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'left', minWidth: '260px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                <form onSubmit={handleLoginAdmin} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '14px', color: '#334155' }}>🔐 Portal Admin:</label>
                   <input 
                     type="password" 
-                    placeholder="Password Admin..." 
+                    placeholder="Masukkan Password Admin..." 
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
-                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #d1d5db' }}
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
                   />
-                  <button type="submit" style={{ background: '#16a34a', color: 'white', padding: '8px', borderRadius: '4px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
-                    Masuk Admin
+                  <button type="submit" style={{ background: '#10b981', color: 'white', padding: '10px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
+                    Login Admin
                   </button>
                 </form>
               </div>
@@ -242,47 +258,50 @@ export default function App() {
         {/* PORTAL KARYAWAN */}
         {role === 'karyawan' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
-              <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>Portal Absensi Karyawan</h2>
-              <button onClick={() => setRole('pilih')} style={{ background: '#9ca3af', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Kembali</button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Form Kehadiran Karyawan</h2>
+                <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>Silakan catat jam masuk atau jam pulang Anda hari ini</p>
+              </div>
+              <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>← Kembali</button>
             </div>
 
-            <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Pilih Nama / ID Karyawan:</label>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#33415') + 'color: #334155' }}>Pilih Nama / ID Karyawan:</label>
                 <select 
                   value={selectedKaryawan} 
                   onChange={(e) => setSelectedKaryawan(e.target.value)}
-                  style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '15px' }}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px', background: '#fff' }}
                 >
                   <option value="">-- Pilih Karyawan --</option>
                   {daftarKaryawan.map(k => (
                     <option key={k.id} value={k.id}>
-                      [{k.id_karyawan || 'Tanpa ID'}] {k.nama} — {k.jabatan}
+                      [{k.id_karyawan || 'ID-'}] {k.nama} — {k.jabatan}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Kategori Absen:</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#334155' }}>Kategori Absen:</label>
                   <select 
                     value={jenisAbsen} 
                     onChange={(e) => setJenisAbsen(e.target.value as 'Masuk' | 'Pulang')}
-                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px', background: '#fff' }}
                   >
-                    <option value="Masuk">Absen Masuk</option>
-                    <option value="Pulang">Absen Pulang</option>
+                    <option value="Masuk">🟢 Absen Masuk</option>
+                    <option value="Pulang">🔴 Absen Pulang</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Keterangan:</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#334155' }}>Status Kehadiran:</label>
                   <select 
                     value={statusAbsen} 
                     onChange={(e) => setStatusAbsen(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px', background: '#fff' }}
                   >
                     <option value="Hadir">Hadir</option>
                     <option value="Izin">Izin</option>
@@ -295,7 +314,7 @@ export default function App() {
               <button 
                 type="submit" 
                 disabled={loading}
-                style={{ background: '#2563eb', color: 'white', padding: '14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '10px' }}
+                style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', color: 'white', padding: '14px', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '10px', boxShadow: '0 4px 10px rgba(37, 99, 235, 0.3)' }}
               >
                 {loading ? 'Menyimpan...' : `Kirim Absen ${jenisAbsen} Sekarang`}
               </button>
@@ -303,76 +322,76 @@ export default function App() {
           </div>
         )}
 
-        {/* DASHBOARD ADMIN EKSKLUSIF */}
+        {/* DASHBOARD ADMIN */}
         {role === 'admin' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <div>
-                <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>Dashboard Admin Perusahaan</h2>
-                <span style={{ color: '#16a34a', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase</span>
+                <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Dashboard Admin Eksekutif</h2>
+                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase (Real-Time)</span>
               </div>
-              <button onClick={() => setRole('pilih')} style={{ background: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Logout Admin</button>
+              <button onClick={() => setRole('pilih')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Logout Admin</button>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
               <button 
                 onClick={() => setActiveTab('riwayat')}
-                style={{ padding: '8px 16px', background: activeTab === 'riwayat' ? '#2563eb' : '#e5e7eb', color: activeTab === 'riwayat' ? 'white' : '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+                style={{ padding: '10px 18px', background: activeTab === 'riwayat' ? '#2563eb' : '#f1f5f9', color: activeTab === 'riwayat' ? 'white' : '#475569', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
               >
-                📊 Rekap & Download Excel
+                📊 Rekap Kehadiran
               </button>
               <button 
                 onClick={() => setActiveTab('karyawan')}
-                style={{ padding: '8px 16px', background: activeTab === 'karyawan' ? '#2563eb' : '#e5e7eb', color: activeTab === 'karyawan' ? 'white' : '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+                style={{ padding: '10px 18px', background: activeTab === 'karyawan' ? '#2563eb' : '#f1f5f9', color: activeTab === 'karyawan' ? 'white' : '#475569', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
               >
-                👥 Kelola Data Karyawan (50+)
+                👥 Kelola Karyawan (50+)
               </button>
             </div>
 
-            {/* TAB REKAP & EXCEL */}
+            {/* TAB REKAP */}
             {activeTab === 'riwayat' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', color: '#374151' }}>Seluruh Riwayat Absensi & ID Karyawan</h3>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#334155' }}>Daftar Rekapitulasi Absensi</h3>
                   {riwayatAbsen.length > 0 && (
                     <button 
                       onClick={exportToExcel}
-                      style={{ backgroundColor: '#15803d', color: 'white', padding: '8px 14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}
+                      style={{ backgroundColor: '#10b981', color: 'white', padding: '10px 16px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px', boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)' }}
                     >
-                      📥 Download Excel (Dengan Kolom ID)
+                      📥 Download Excel Rapi
                     </button>
                   )}
                 </div>
 
                 {riwayatAbsen.length === 0 ? (
-                  <p style={{ color: '#9ca3af', textAlign: 'center', padding: '30px' }}>Belum ada data absensi masuk.</p>
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: '40px' }}>Belum ada data absensi tercatat.</p>
                 ) : (
-                  <div style={{ overflowX: 'auto', maxHeight: '400px' }}>
+                  <div style={{ overflowX: 'auto', maxHeight: '420px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                       <thead>
-                        <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db', position: 'sticky', top: 0 }}>
-                          <th style={{ padding: '8px' }}>ID</th>
-                          <th style={{ padding: '8px' }}>Tanggal</th>
-                          <th style={{ padding: '8px' }}>Nama Karyawan</th>
-                          <th style={{ padding: '8px' }}>Jabatan</th>
-                          <th style={{ padding: '8px' }}>Masuk</th>
-                          <th style={{ padding: '8px' }}>Pulang</th>
-                          <th style={{ padding: '8px' }}>Total Kerja</th>
-                          <th style={{ padding: '8px' }}>Status</th>
+                        <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', position: 'sticky', top: 0, color: '#475569' }}>
+                          <th style={{ padding: '12px' }}>ID</th>
+                          <th style={{ padding: '12px' }}>Tanggal</th>
+                          <th style={{ padding: '12px' }}>Nama Karyawan</th>
+                          <th style={{ padding: '12px' }}>Jabatan</th>
+                          <th style={{ padding: '12px' }}>Masuk</th>
+                          <th style={{ padding: '12px' }}>Pulang</th>
+                          <th style={{ padding: '12px' }}>Total Kerja</th>
+                          <th style={{ padding: '12px' }}>Status</th>
                         </tr>
                       </thead>
                       <tbody>
                         {riwayatAbsen.map((item) => (
-                          <tr key={item.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                            <td style={{ padding: '8px', fontWeight: 'bold', color: '#4b5563' }}>{item.id_karyawan || '-'}</td>
-                            <td style={{ padding: '8px', color: '#4b5563' }}>{item.tanggal}</td>
-                            <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.nama}</td>
-                            <td style={{ padding: '8px', color: '#6b7280' }}>{item.jabatan}</td>
-                            <td style={{ padding: '8px', color: '#2563eb', fontWeight: 'bold' }}>{item.jam_masuk}</td>
-                            <td style={{ padding: '8px', color: '#9333ea', fontWeight: 'bold' }}>{item.jam_pulang}</td>
-                            <td style={{ padding: '8px', color: '#047857', fontWeight: 'bold' }}>{item.total_jam}</td>
-                            <td style={{ padding: '8px' }}>
-                              <span style={{ padding: '3px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#166534' }}>
+                          <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '12px', fontWeight: 'bold', color: '#475569' }}>{item.id_karyawan || '-'}</td>
+                            <td style={{ padding: '12px', color: '#64748b' }}>{item.tanggal}</td>
+                            <td style={{ padding: '12px', fontWeight: 'bold', color: '#1e293b' }}>{item.nama}</td>
+                            <td style={{ padding: '12px', color: '#64748b' }}>{item.jabatan}</td>
+                            <td style={{ padding: '12px', color: '#2563eb', fontWeight: 'bold' }}>{item.jam_masuk}</td>
+                            <td style={{ padding: '12px', color: '#9333ea', fontWeight: 'bold' }}>{item.jam_pulang}</td>
+                            <td style={{ padding: '12px', color: '#059669', fontWeight: 'bold' }}>{item.total_jam}</td>
+                            <td style={{ padding: '12px' }}>
+                              <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#166534' }}>
                                 {item.status}
                               </span>
                             </td>
@@ -388,46 +407,46 @@ export default function App() {
             {/* TAB KELOLA KARYAWAN */}
             {activeTab === 'karyawan' && (
               <div>
-                <h3 style={{ fontSize: '16px', color: '#374151', marginBottom: '12px' }}>Tambah Karyawan Baru (Beserta ID / NIP)</h3>
-                <form onSubmit={handleTambahKaryawan} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', background: '#f9fafb', padding: '16px', borderRadius: '8px' }}>
+                <h3 style={{ fontSize: '16px', color: '#334155', marginBottom: '12px' }}>Pendaftaran Karyawan Baru (50+ Pegawai)</h3>
+                <form onSubmit={handleTambahKaryawan} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                   <input 
                     type="text" 
                     placeholder="ID Karyawan / NIP (Contoh: EMP001)..." 
                     value={idKaryawanBaru} 
                     onChange={(e) => setIdKaryawanBaru(e.target.value)} 
-                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
                   />
                   <input 
                     type="text" 
                     placeholder="Nama Lengkap Karyawan..." 
                     value={namaBaru} 
                     onChange={(e) => setNamaBaru(e.target.value)} 
-                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
                   />
                   <input 
                     type="text" 
                     placeholder="Jabatan / Divisi..." 
                     value={jabatanBaru} 
                     onChange={(e) => setJabatanBaru(e.target.value)} 
-                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
                   />
-                  <button type="submit" disabled={loading} style={{ background: '#16a34a', color: 'white', padding: '10px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <button type="submit" disabled={loading} style={{ background: '#10b981', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
                     {loading ? 'Menambahkan...' : '+ Daftarkan Karyawan Baru'}
                   </button>
                 </form>
 
-                <h4 style={{ fontSize: '15px', color: '#374151', marginBottom: '8px' }}>Daftar Seluruh Karyawan ({daftarKaryawan.length} Orang)</h4>
-                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                  <ul style={{ listStyle: 'none', padding: 0 }}>
+                <h4 style={{ fontSize: '15px', color: '#334155', marginBottom: '8px' }}>Daftar Karyawan Terdaftar ({daftarKaryawan.length} Orang)</h4>
+                <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '4px' }}>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {daftarKaryawan.map(k => (
-                      <li key={k.id} style={{ padding: '8px 12px', background: '#fff', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', borderRadius: '4px', marginBottom: '4px', alignItems: 'center' }}>
+                      <li key={k.id} style={{ padding: '10px 14px', background: '#fff', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', marginRight: '8px' }}>
-                            {k.id_karyawan || 'Tanpa ID'}
+                          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '3px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', marginRight: '10px' }}>
+                            {k.id_karyawan || 'ID-'}
                           </span>
-                          <strong>{k.nama}</strong>
+                          <strong style={{ color: '#1e293b' }}>{k.nama}</strong>
                         </div>
-                        <span style={{ color: '#6b7280', fontSize: '13px' }}>{k.jabatan}</span>
+                        <span style={{ color: '#64748b', fontSize: '13px' }}>{k.jabatan}</span>
                       </li>
                     ))}
                   </ul>
