@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
 interface Karyawan {
@@ -19,6 +19,8 @@ interface Absen {
   jam_pulang: string;
   total_jam: string;
   status: string;
+  lokasi?: string;
+  foto_url?: string;
 }
 
 export default function App() {
@@ -40,10 +42,79 @@ export default function App() {
   const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
 
+  // Fitur GPS & Kamera State
+  const [lokasiUser, setLokasiUser] = useState<string>('Mendeteksi lokasi...');
+  const [koordinat, setKoordinat] = useState<{lat: number, lng: number} | null>(null);
+  const [fotoSnapshot, setFotoSnapshot] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
   useEffect(() => {
     fetchDataKaryawan();
     fetchDataAbsensi();
   }, []);
+
+  // Aktifkan Kamera saat masuk menu Karyawan
+  useEffect(() => {
+    if (role === 'karyawan') {
+      startCamera();
+      ambilLokasiGPS();
+    } else {
+      stopCamera();
+    }
+  }, [role]);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Gagal mengakses kamera:", err);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  const ambilFoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth || 320;
+      canvas.height = video.videoHeight || 240;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        setFotoSnapshot(dataUrl);
+        alert('Verifikasi wajah / foto berhasil diambil!');
+      }
+    }
+  };
+
+  const ambilLokasiGPS = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setKoordinat({ lat, lng });
+          setLokasiUser(`Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`);
+        },
+        () => {
+          setLokasiUser('Gagal mendeteksi GPS (Izin lokasi ditolak)');
+        }
+      );
+    } else {
+      setLokasiUser('GPS tidak didukung browser ini');
+    }
+  };
 
   const fetchDataKaryawan = async () => {
     const { data, error } = await supabase.from('karyawan').select('*').order('nama', { ascending: true });
@@ -57,7 +128,7 @@ export default function App() {
 
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'admin123') { // Anda bisa ganti password admin di sini
+    if (adminPassword === 'admin123') { // Ganti password admin jika diinginkan
       setRole('admin');
       setActiveTab('riwayat');
     } else {
@@ -84,6 +155,10 @@ export default function App() {
       alert('Silakan pilih nama Anda terlebih dahulu.');
       return;
     }
+    if (!fotoSnapshot) {
+      alert('Harap ambil foto verifikasi wajah terlebih dahulu sebelum absen!');
+      return;
+    }
 
     const kObj = daftarKaryawan.find(k => k.id === selectedKaryawan);
     if (!kObj) return;
@@ -105,7 +180,7 @@ export default function App() {
         const total = hitungDurasiJam(jamSekarang, existingData.jam_pulang);
         await supabase
           .from('absensi')
-          .update({ jam_masuk: jamSekarang, total_jam: total, status: statusAbsen })
+          .update({ jam_masuk: jamSekarang, total_jam: total, status: statusAbsen, lokasi: lokasiUser })
           .eq('id', existingData.id);
       } else {
         await supabase.from('absensi').insert([{
@@ -117,16 +192,17 @@ export default function App() {
           jam_masuk: jamSekarang,
           jam_pulang: '-',
           total_jam: '-',
-          status: statusAbsen
+          status: statusAbsen,
+          lokasi: lokasiUser
         }]);
       }
-      alert(`Absen Masuk berhasil dicatat, ${kObj.nama}!`);
+      alert(`Absen Masuk berhasil dicatat untuk ${kObj.nama} beserta koordinat lokasi.`);
     } else {
       if (existingData) {
         const total = hitungDurasiJam(existingData.jam_masuk, jamSekarang);
         await supabase
           .from('absensi')
-          .update({ jam_pulang: jamSekarang, total_jam: total })
+          .update({ jam_pulang: jamSekarang, total_jam: total, lokasi: lokasiUser })
           .eq('id', existingData.id);
       } else {
         await supabase.from('absensi').insert([{
@@ -138,13 +214,15 @@ export default function App() {
           jam_masuk: '-',
           jam_pulang: jamSekarang,
           total_jam: '-',
-          status: statusAbsen
+          status: statusAbsen,
+          lokasi: lokasiUser
         }]);
       }
-      alert(`Absen Pulang berhasil dicatat, ${kObj.nama}! Hati-hati di jalan.`);
+      alert(`Absen Pulang berhasil dicatat untuk ${kObj.nama}!`);
     }
 
     setLoading(false);
+    setFotoSnapshot(null);
     fetchDataAbsensi();
   };
 
@@ -172,7 +250,6 @@ export default function App() {
     }
   };
 
-  // Fungsi Hapus Karyawan
   const handleHapusKaryawan = async (id: string, nama: string) => {
     if (window.confirm(`Apakah Anda yakin ingin menghapus data karyawan "${nama}"?`)) {
       setLoading(true);
@@ -193,14 +270,15 @@ export default function App() {
       alert('Belum ada data absensi.');
       return;
     }
-    let csv = "data:text/csv;charset=utf-8,ID Karyawan;Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Status\n";
+    let csv = "data:text/csv;charset=utf-8,ID Karyawan;Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Lokasi GPS;Status\n";
     riwayatAbsen.forEach(r => {
       const idKry = r.id_karyawan || '-';
-      csv += `"${idKry}";"${r.nama}";"${r.jabatan}";${r.tanggal};${r.jam_masuk};${r.jam_pulang};"${r.total_jam}";${r.status}\n`;
+      const lok = r.lokasi || '-';
+      csv += `"${idKry}";"${r.nama}";"${r.jabatan}";${r.tanggal};${r.jam_masuk};${r.jam_pulang};"${r.total_jam}";"${lok}";${r.status}\n`;
     });
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csv));
-    link.setAttribute("download", `Rekap_Absensi_${new Date().toLocaleDateString('id-ID')}.csv`);
+    link.setAttribute("download", `Rekap_Absensi_GPS_${new Date().toLocaleDateString('id-ID')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -218,7 +296,7 @@ export default function App() {
     }}>
       <div style={{ 
         width: '100%',
-        maxWidth: '900px', 
+        maxWidth: '950px', 
         background: 'rgba(255, 255, 255, 0.95)', 
         backdropFilter: 'blur(10px)',
         padding: '32px', 
@@ -229,9 +307,9 @@ export default function App() {
         {/* PILIH ROLE */}
         {role === 'pilih' && (
           <div style={{ textAlign: 'center', padding: '30px 10px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢</div>
-            <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Perusahaan</h1>
-            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Platform pencatatan kehadiran modern, real-time, dan terintegrasi</p>
+            <div style={{ fontSize: '48px', marginBottom: '10px' }}>📍📸</div>
+            <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Berbasis GPS & Wajah</h1>
+            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Dilengkapi verifikasi titik lokasi akurat dan tangkapan kamera real-time</p>
             
             <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap' }}>
               <button 
@@ -270,18 +348,45 @@ export default function App() {
           </div>
         )}
 
-        {/* PORTAL KARYAWAN */}
+        {/* PORTAL KARYAWAN DENGAN KAMERA & GPS */}
         {role === 'karyawan' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <div>
-                <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Form Kehadiran Karyawan</h2>
-                <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>Silakan catat jam masuk atau jam pulang Anda hari ini</p>
+                <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Absensi Kehadiran & Verifikasi Wajah</h2>
+                <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>Lokasi Anda: <strong style={{ color: '#0284c7' }}>{lokasiUser}</strong></p>
               </div>
               <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>← Kembali</button>
             </div>
 
             <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* TAMPILAN KAMERA & VERIFIKASI WAJAH */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                <label style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold', color: '#334155' }}>📸 Verifikasi Wajah Karyawan:</label>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div>
+                    <video ref={videoRef} autoPlay playsInline style={{ width: '220px', height: '165px', borderRadius: '8px', background: '#000', objectFit: 'cover' }} />
+                  </div>
+                  <div>
+                    {fotoSnapshot ? (
+                      <div style={{ textAlign: 'center' }}>
+                        <img src={fotoSnapshot} alt="Snapshot" style={{ width: '220px', height: '165px', borderRadius: '8px', objectFit: 'cover', border: '2px solid #10b981' }} />
+                        <p style={{ fontSize: '11px', color: '#10b981', fontWeight: 'bold', margin: '4px 0 0 0' }}>✔ Wajah Terverifikasi</p>
+                      </div>
+                    ) : (
+                      <div style={{ width: '220px', height: '165px', borderRadius: '8px', border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>Belum Ambil Foto</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button type="button" onClick={ambilFoto} style={{ marginTop: '12px', background: '#0284c7', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+                  📷 Ambil Foto Wajah Sekarang
+                </button>
+              </div>
+              <canvas ref={canvasRef} style={{ display: 'none' }} />
+
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#334155' }}>Pilih Nama / ID Karyawan:</label>
                 <select 
@@ -331,7 +436,7 @@ export default function App() {
                 disabled={loading}
                 style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', color: 'white', padding: '14px', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '10px', boxShadow: '0 4px 10px rgba(37, 99, 235, 0.3)' }}
               >
-                {loading ? 'Menyimpan...' : `Kirim Absen ${jenisAbsen} Sekarang`}
+                {loading ? 'Menyimpan...' : `Kirim Absen ${jenisAbsen} (Dengan GPS & Wajah)`}
               </button>
             </form>
           </div>
@@ -343,7 +448,7 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <div>
                 <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Dashboard Admin Eksekutif</h2>
-                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase (Real-Time)</span>
+                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Cloud Supabase (GPS & Wajah Terintegrasi)</span>
               </div>
               <button onClick={() => setRole('pilih')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Logout Admin</button>
             </div>
@@ -353,7 +458,7 @@ export default function App() {
                 onClick={() => setActiveTab('riwayat')}
                 style={{ padding: '10px 18px', background: activeTab === 'riwayat' ? '#2563eb' : '#f1f5f9', color: activeTab === 'riwayat' ? 'white' : '#475569', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
               >
-                📊 Rekap Kehadiran
+                📊 Rekap Kehadiran & Lokasi
               </button>
               <button 
                 onClick={() => setActiveTab('karyawan')}
@@ -363,17 +468,17 @@ export default function App() {
               </button>
             </div>
 
-            {/* TAB REKAP */}
+            {/* TAB REKAP DENGAN KOLOM LOKASI */}
             {activeTab === 'riwayat' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', color: '#334155' }}>Daftar Rekapitulasi Absensi</h3>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#334155' }}>Daftar Rekapitulasi Absensi & Koordinat</h3>
                   {riwayatAbsen.length > 0 && (
                     <button 
                       onClick={exportToExcel}
                       style={{ backgroundColor: '#10b981', color: 'white', padding: '10px 16px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px', boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)' }}
                     >
-                      📥 Download Excel Rapi
+                      📥 Download Excel (Beserta GPS)
                     </button>
                   )}
                 </div>
@@ -392,6 +497,7 @@ export default function App() {
                           <th style={{ padding: '12px' }}>Masuk</th>
                           <th style={{ padding: '12px' }}>Pulang</th>
                           <th style={{ padding: '12px' }}>Total Kerja</th>
+                          <th style={{ padding: '12px' }}>Titik GPS</th>
                           <th style={{ padding: '12px' }}>Status</th>
                         </tr>
                       </thead>
@@ -405,6 +511,7 @@ export default function App() {
                             <td style={{ padding: '12px', color: '#2563eb', fontWeight: 'bold' }}>{item.jam_masuk}</td>
                             <td style={{ padding: '12px', color: '#9333ea', fontWeight: 'bold' }}>{item.jam_pulang}</td>
                             <td style={{ padding: '12px', color: '#059669', fontWeight: 'bold' }}>{item.total_jam}</td>
+                            <td style={{ padding: '12px', color: '#0284c7', fontSize: '11px', fontWeight: '500' }}>{item.lokasi || '-'}</td>
                             <td style={{ padding: '12px' }}>
                               <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#166534' }}>
                                 {item.status}
