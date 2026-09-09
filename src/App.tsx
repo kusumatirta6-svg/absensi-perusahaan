@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient';
 
 interface Karyawan {
   id: string;
+  id_karyawan: string;
   nama: string;
   jabatan: string;
 }
@@ -10,6 +11,7 @@ interface Karyawan {
 interface Absen {
   id: string;
   karyawan_id: string;
+  id_karyawan: string;
   nama: string;
   jabatan: string;
   tanggal: string;
@@ -28,12 +30,15 @@ export default function App() {
   const [riwayatAbsen, setRiwayatAbsen] = useState<Absen[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Form States
+  // Form States Karyawan Baru
+  const [idKaryawanBaru, setIdKaryawanBaru] = useState('');
+  const [namaBaru, setNamaBaru] = useState('');
+  const [jabatanBaru, setJabatanBaru] = useState('');
+
+  // Form States Absen
   const [selectedKaryawan, setSelectedKaryawan] = useState('');
   const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
-  const [namaBaru, setNamaBaru] = useState('');
-  const [jabatanBaru, setJabatanBaru] = useState('');
 
   // Ambil Data dari Supabase saat pertama kali buka
   useEffect(() => {
@@ -55,14 +60,14 @@ export default function App() {
     }
   };
 
-  // Login Admin
+  // Login Admin (Ganti 'Moon1729' dengan password rahasia Anda)
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
     if (adminPassword === 'admin123') {
       setRole('admin');
       setActiveTab('riwayat');
     } else {
-      alert('Password Admin salah! (Gunakan: admin123)');
+      alert('Password Admin salah!');
     }
   };
 
@@ -114,6 +119,7 @@ export default function App() {
       } else {
         await supabase.from('absensi').insert([{
           karyawan_id: selectedKaryawan,
+          id_karyawan: kObj.id_karyawan || '-',
           nama: kObj.nama,
           jabatan: kObj.jabatan,
           tanggal: tanggalHariIni,
@@ -135,6 +141,7 @@ export default function App() {
       } else {
         await supabase.from('absensi').insert([{
           karyawan_id: selectedKaryawan,
+          id_karyawan: kObj.id_karyawan || '-',
           nama: kObj.nama,
           jabatan: kObj.jabatan,
           tanggal: tanggalHariIni,
@@ -151,38 +158,45 @@ export default function App() {
     fetchDataAbsensi();
   };
 
-  // Tambah Karyawan Baru ke Supabase (Mendukung 50+ Orang)
+  // Tambah Karyawan Baru dengan ID Karyawan / NIP
   const handleTambahKaryawan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!namaBaru.trim() || !jabatanBaru.trim()) return;
+    if (!idKaryawanBaru.trim() || !namaBaru.trim() || !jabatanBaru.trim()) {
+      alert('Semua kolom wajib diisi!');
+      return;
+    }
 
     setLoading(true);
-    const { error } = await supabase.from('karyawan').insert([{ nama: namaBaru, jabatan: jabatanBaru }]);
+    const { error } = await supabase.from('karyawan').insert([
+      { id_karyawan: idKaryawanBaru, nama: namaBaru, jabatan: jabatanBaru }
+    ]);
     setLoading(false);
 
     if (error) {
       alert('Gagal menambahkan karyawan: ' + error.message);
     } else {
-      alert('Karyawan baru berhasil ditambahkan ke database cloud!');
+      alert('Karyawan baru dengan ID berhasil ditambahkan!');
+      setIdKaryawanBaru('');
       setNamaBaru('');
       setJabatanBaru('');
       fetchDataKaryawan();
     }
   };
 
-  // Download Excel Khusus Admin
+  // Download Excel Khusus Admin (Dengan Kolom ID Karyawan di Depan)
   const exportToExcel = () => {
     if (riwayatAbsen.length === 0) {
       alert('Belum ada data absensi.');
       return;
     }
-    let csv = "data:text/csv;charset=utf-8,Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Status\n";
+    let csv = "data:text/csv;charset=utf-8,ID Karyawan;Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Status\n";
     riwayatAbsen.forEach(r => {
-      csv += `"${r.nama}";"${r.jabatan}";${r.tanggal};${r.jam_masuk};${r.jam_pulang};"${r.total_jam}";${r.status}\n`;
+      const idKry = r.id_karyawan || '-';
+      csv += `"${idKry}";"${r.nama}";"${r.jabatan}";${r.tanggal};${r.jam_masuk};${r.jam_pulang};"${r.total_jam}";${r.status}\n`;
     });
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csv));
-    link.setAttribute("download", `Rekap_Absensi_Perusahaan_${new Date().toLocaleDateString('id-ID')}.csv`);
+    link.setAttribute("download", `Rekap_Absensi_ID_${new Date().toLocaleDateString('id-ID')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -190,13 +204,13 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '20px', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '850px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
         
-        {/* HALAMAN PEMILIHAN PERAN */}
+        {/* PEMILIHAN PERAN */}
         {role === 'pilih' && (
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <h1 style={{ color: '#1f2937', marginBottom: '8px' }}>Sistem Absensi Real-Time Perusahaan</h1>
-            <p style={{ color: '#6b7280', marginBottom: '32px' }}>Sinkronisasi otomatis untuk 50+ karyawan & Portal Admin eksklusif</p>
+            <h1 style={{ color: '#1f2937', marginBottom: '8px' }}>Sistem Absensi Perusahaan Profesional</h1>
+            <p style={{ color: '#6b7280', marginBottom: '32px' }}>Dilengkapi ID Karyawan / NIP, Real-Time Cloud, & Portal Admin</p>
             
             <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
               <button 
@@ -235,15 +249,17 @@ export default function App() {
 
             <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Pilih Nama Anda ({daftarKaryawan.length} Karyawan Terdaftar):</label>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Pilih Nama / ID Karyawan:</label>
                 <select 
                   value={selectedKaryawan} 
                   onChange={(e) => setSelectedKaryawan(e.target.value)}
                   style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '15px' }}
                 >
-                  <option value="">-- Pilih Nama Karyawan --</option>
+                  <option value="">-- Pilih Karyawan --</option>
                   {daftarKaryawan.map(k => (
-                    <option key={k.id} value={k.id}>{k.nama} — {k.jabatan}</option>
+                    <option key={k.id} value={k.id}>
+                      [{k.id_karyawan || 'Tanpa ID'}] {k.nama} — {k.jabatan}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -281,7 +297,7 @@ export default function App() {
                 disabled={loading}
                 style={{ background: '#2563eb', color: 'white', padding: '14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '10px' }}
               >
-                {loading ? 'Menyimpan ke Cloud...' : `Kirim Absen ${jenisAbsen} Sekarang`}
+                {loading ? 'Menyimpan...' : `Kirim Absen ${jenisAbsen} Sekarang`}
               </button>
             </form>
           </div>
@@ -293,7 +309,7 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
               <div>
                 <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>Dashboard Admin Perusahaan</h2>
-                <span style={{ color: '#16a34a', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Database Supabase</span>
+                <span style={{ color: '#16a34a', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase</span>
               </div>
               <button onClick={() => setRole('pilih')} style={{ background: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Logout Admin</button>
             </div>
@@ -313,17 +329,17 @@ export default function App() {
               </button>
             </div>
 
-            {/* REKAP & EXCEL */}
+            {/* TAB REKAP & EXCEL */}
             {activeTab === 'riwayat' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', color: '#374151' }}>Seluruh Riwayat Absensi Real-Time</h3>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#374151' }}>Seluruh Riwayat Absensi & ID Karyawan</h3>
                   {riwayatAbsen.length > 0 && (
                     <button 
                       onClick={exportToExcel}
                       style={{ backgroundColor: '#15803d', color: 'white', padding: '8px 14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}
                     >
-                      📥 Download Excel Khusus Admin
+                      📥 Download Excel (Dengan Kolom ID)
                     </button>
                   )}
                 </div>
@@ -335,8 +351,9 @@ export default function App() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                       <thead>
                         <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db', position: 'sticky', top: 0 }}>
+                          <th style={{ padding: '8px' }}>ID</th>
                           <th style={{ padding: '8px' }}>Tanggal</th>
-                          <th style={{ padding: '8px' }}>Nama</th>
+                          <th style={{ padding: '8px' }}>Nama Karyawan</th>
                           <th style={{ padding: '8px' }}>Jabatan</th>
                           <th style={{ padding: '8px' }}>Masuk</th>
                           <th style={{ padding: '8px' }}>Pulang</th>
@@ -347,6 +364,7 @@ export default function App() {
                       <tbody>
                         {riwayatAbsen.map((item) => (
                           <tr key={item.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                            <td style={{ padding: '8px', fontWeight: 'bold', color: '#4b5563' }}>{item.id_karyawan || '-'}</td>
                             <td style={{ padding: '8px', color: '#4b5563' }}>{item.tanggal}</td>
                             <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.nama}</td>
                             <td style={{ padding: '8px', color: '#6b7280' }}>{item.jabatan}</td>
@@ -367,11 +385,18 @@ export default function App() {
               </div>
             )}
 
-            {/* KELOLA KARYAWAN */}
+            {/* TAB KELOLA KARYAWAN */}
             {activeTab === 'karyawan' && (
               <div>
-                <h3 style={{ fontSize: '16px', color: '#374151', marginBottom: '12px' }}>Tambah Karyawan Baru (Cloud Supabase)</h3>
+                <h3 style={{ fontSize: '16px', color: '#374151', marginBottom: '12px' }}>Tambah Karyawan Baru (Beserta ID / NIP)</h3>
                 <form onSubmit={handleTambahKaryawan} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', background: '#f9fafb', padding: '16px', borderRadius: '8px' }}>
+                  <input 
+                    type="text" 
+                    placeholder="ID Karyawan / NIP (Contoh: EMP001)..." 
+                    value={idKaryawanBaru} 
+                    onChange={(e) => setIdKaryawanBaru(e.target.value)} 
+                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                  />
                   <input 
                     type="text" 
                     placeholder="Nama Lengkap Karyawan..." 
@@ -395,9 +420,14 @@ export default function App() {
                 <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
                   <ul style={{ listStyle: 'none', padding: 0 }}>
                     {daftarKaryawan.map(k => (
-                      <li key={k.id} style={{ padding: '8px 12px', background: '#fff', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', borderRadius: '4px', marginBottom: '4px' }}>
-                        <span><strong>{k.nama}</strong></span>
-                        <span style={{ color: '#6b7280' }}>{k.jabatan}</span>
+                      <li key={k.id} style={{ padding: '8px 12px', background: '#fff', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', borderRadius: '4px', marginBottom: '4px', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', marginRight: '8px' }}>
+                            {k.id_karyawan || 'Tanpa ID'}
+                          </span>
+                          <strong>{k.nama}</strong>
+                        </div>
+                        <span style={{ color: '#6b7280', fontSize: '13px' }}>{k.jabatan}</span>
                       </li>
                     ))}
                   </ul>
