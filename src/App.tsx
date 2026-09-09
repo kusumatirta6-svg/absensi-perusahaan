@@ -57,7 +57,7 @@ export default function App() {
 
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'admin123') { // Ganti password admin di sini jika ingin
+    if (adminPassword === 'admin123') {
       setRole('admin');
       setActiveTab('riwayat');
     } else {
@@ -229,8 +229,7 @@ export default function App() {
                   fontSize: '16px', 
                   fontWeight: 'bold', 
                   cursor: 'pointer', 
-                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-                  transition: 'transform 0.2s'
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
                 }}
               >
                 👤 Masuk sebagai Karyawan
@@ -268,7 +267,7 @@ export default function App() {
 
             <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#33415') + 'color: #334155' }}>Pilih Nama / ID Karyawan:</label>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#334155' }}>Pilih Nama / ID Karyawan:</label>
                 <select 
                   value={selectedKaryawan} 
                   onChange={(e) => setSelectedKaryawan(e.target.value)}
