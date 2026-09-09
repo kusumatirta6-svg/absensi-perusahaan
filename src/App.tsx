@@ -40,7 +40,7 @@ export default function App() {
   const [regEmail, setRegEmail] = useState('');
   const [regPin, setRegPin] = useState('');
 
-  // Form States Login Karyawan (Pilih Nama + PIN)
+  // Form States Login Karyawan
   const [selectedKaryawanId, setSelectedKaryawanId] = useState('');
   const [inputPin, setInputPin] = useState('');
   const [karyawanLogin, setKaryawanLogin] = useState<Karyawan | null>(null);
@@ -63,7 +63,6 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Konfigurasi Jam Masuk & Radius Kantor
   const KANTOR_LAT = -6.1751; 
   const KANTOR_LNG = 106.8650;
   const MAKS_RADIUS_METER = 200; 
@@ -160,7 +159,6 @@ export default function App() {
     if (!error && data) setRiwayatAbsen(data);
   };
 
-  // Login Karyawan (Pilih Nama + Masukkan PIN)
   const handleLoginKaryawan = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedKaryawanId) {
@@ -179,37 +177,7 @@ export default function App() {
     }
   };
 
-  // Kirim OTP / Reset Password ke Gmail via Supabase Auth
-  const handleKirimOTPGmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!lupaEmail.trim() || !lupaEmail.includes('@gmail.com')) {
-      alert('Masukkan alamat Email Gmail yang valid.');
-      return;
-    }
-
-    // Cek apakah email terdaftar di database karyawan
-    const found = daftarKaryawan.find(k => k.email && k.email.toLowerCase() === lupaEmail.toLowerCase());
-    if (!found) {
-      alert('Email Gmail tersebut tidak ditemukan dalam data karyawan terdaftar!');
-      return;
-    }
-
-    setLoading(true);
-    // Menggunakan Supabase Auth untuk mengirim instruksi/kode pemulihan sandi ke email
-    const { error } = await supabase.auth.resetPasswordForEmail(lupaEmail, {
-      redirectTo: window.location.origin,
-    });
-    setLoading(false);
-
-    if (error) {
-      alert('Gagal mengirim email pemulihan: ' + error.message);
-    } else {
-      alert(`Instruksi pemulihan PIN / Kode OTP telah dikirimkan ke Gmail: ${lupaEmail}. Silakan cek kotak masuk atau folder spam Anda.`);
-      setLupaEmail('');
-      setRole('karyawan');
-    }
-  };
-
+  // Pendaftaran Mandiri Terintegrasi Supabase Auth & Users Table
   const handlePendaftaranMandiri = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regIdKaryawan.trim() || !regNama.trim() || !regJabatan.trim() || !regEmail.trim() || !regPin.trim()) {
@@ -223,7 +191,24 @@ export default function App() {
     }
 
     setLoading(true);
-    const { error } = await supabase.from('karyawan').insert([
+
+    // 1. Daftarkan akun ke Supabase Auth (Agar menu Authentication > Users terisi)
+    const { error: authError } = await supabase.auth.signUp({
+      email: regEmail,
+      password: regPin, // Menggunakan PIN sebagai sandi akun
+      options: {
+        data: { nama: regNama, jabatan: regJabatan }
+      }
+    });
+
+    if (authError) {
+      setLoading(false);
+      alert('Gagal membuat akun Auth: ' + authError.message);
+      return;
+    }
+
+    // 2. Masukkan data profil ke tabel database 'karyawan'
+    const { error: dbError } = await supabase.from('karyawan').insert([
       { 
         id_karyawan: regIdKaryawan, 
         nama: regNama, 
@@ -232,12 +217,13 @@ export default function App() {
         pin: regPin 
       }
     ]);
+    
     setLoading(false);
 
-    if (error) {
-      alert('Gagal mendaftar: ' + error.message);
+    if (dbError) {
+      alert('Gagal menyimpan data karyawan: ' + dbError.message);
     } else {
-      alert('Akun Anda berhasil dibuat! Silakan login menggunakan Nama dan PIN Anda.');
+      alert('Akun berhasil dibuat dan terdaftar di sistem! Silakan login.');
       setRegIdKaryawan('');
       setRegNama('');
       setRegJabatan('');
@@ -245,6 +231,28 @@ export default function App() {
       setRegPin('');
       setRole('karyawan');
       fetchDataKaryawan();
+    }
+  };
+
+  const handleKirimOTPGmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!lupaEmail.trim() || !lupaEmail.includes('@gmail.com')) {
+      alert('Masukkan alamat Email Gmail yang valid.');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(lupaEmail, {
+      redirectTo: window.location.origin,
+    });
+    setLoading(false);
+
+    if (error) {
+      alert('Gagal mengirim email pemulihan: ' + error.message);
+    } else {
+      alert(`Instruksi pemulihan PIN / Kode OTP telah dikirimkan ke Gmail: ${lupaEmail}.`);
+      setLupaEmail('');
+      setRole('karyawan');
     }
   };
 
@@ -292,7 +300,7 @@ export default function App() {
     if (!karyawanLogin) return;
 
     if (jarakKantorMeter !== null && jarakKantorMeter > MAKS_RADIUS_METER) {
-      alert(`GAGAL ABSEN: Anda berada di luar radius kantor! Jarak Anda sekitar ${jarakKantorMeter} meter dari titik kantor (Maksimal ${MAKS_RADIUS_METER}m).`);
+      alert(`GAGAL ABSEN: Anda berada di luar radius kantor! Jarak Anda sekitar ${jarakKantorMeter} meter.`);
       return;
     }
 
@@ -422,7 +430,6 @@ export default function App() {
         <body>
           <div class="header">
             <h1>PT. PERUSAHAAN ENTERPRISE INDONESIA</h1>
-            <p>Jl. Jendral Sudirman Kav. 52-53, Jakarta Pusat | Telp: (021) 555-8899</p>
             <p><b>LAPORAN RESMI REKAPITULASI KEHADIRAN KARYAWAN</b></p>
           </div>
           <table>
@@ -476,9 +483,7 @@ export default function App() {
     printWindow.document.write(htmlContent);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-    }, 500);
+    setTimeout(() => { printWindow.print(); }, 500);
   };
 
   const filteredAbsen = riwayatAbsen.filter(item => {
@@ -533,12 +538,11 @@ export default function App() {
         boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' 
       }}>
         
-        {/* PILIH ROLE UTAMA */}
         {role === 'pilih' && (
           <div style={{ textAlign: 'center', padding: '30px 10px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢🔑</div>
+            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢🔐</div>
             <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Enterprise Terpadu</h1>
-            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Pilih Nama & Masukkan PIN, Fitur Lupa Password via Gmail, & Geofencing GPS</p>
+            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Pilih Nama & PIN, Pendaftaran Mandiri ke Supabase Auth, & Geofencing GPS</p>
             
             <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
               <button 
@@ -594,14 +598,13 @@ export default function App() {
           </div>
         )}
 
-        {/* PENDAFTARAN MANDIRI */}
         {role === 'daftar_karyawan' && (
           <div style={{ padding: '10px 10px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
               <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px', fontWeight: '700' }}>Pendaftaran Akun Karyawan Mandiri</h2>
               <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>← Kembali</button>
             </div>
-            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Daftarkan data diri Anda beserta Email Gmail dan buat PIN rahasia Anda sendiri.</p>
+            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Daftarkan data diri Anda beserta Email Gmail dan PIN (Otomatis tercatat di Supabase Auth & Database).</p>
 
             <form onSubmit={handlePendaftaranMandiri} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -649,7 +652,6 @@ export default function App() {
           </div>
         )}
 
-        {/* LOGIN KARYAWAN: PILIH NAMA + MASUKKAN PIN */}
         {role === 'karyawan' && !karyawanLogin && (
           <div style={{ textAlign: 'center', padding: '30px 20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -703,14 +705,13 @@ export default function App() {
           </div>
         )}
 
-        {/* HALAMAN LUPA PASSWORD / PIN VIA GMAIL */}
         {role === 'lupa_password' && (
           <div style={{ padding: '20px 10px', textAlign: 'center' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
               <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px', fontWeight: '700' }}>Pemulihan PIN / Lupa Password</h2>
               <button onClick={() => setRole('karyawan')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>← Kembali</button>
             </div>
-            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '24px' }}>Masukkan alamat Email Gmail terdaftar Anda. Kami akan mengirimkan instruksi pemulihan atau kode OTP ke email Anda.</p>
+            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '24px' }}>Masukkan alamat Email Gmail terdaftar Anda. Supabase Auth akan mengirimkan tautan pemulihan sandi ke email Anda.</p>
 
             <form onSubmit={handleKirimOTPGmail} style={{ maxWidth: '360px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
               <input 
@@ -721,13 +722,12 @@ export default function App() {
                 style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
               />
               <button type="submit" disabled={loading} style={{ background: '#0284c7', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
-                {loading ? 'Mengirim Pemulihan...' : 'Kirim Kode OTP / Pemulihan ke Gmail'}
+                {loading ? 'Mengirim Pemulihan...' : 'Kirim Tautan Pemulihan ke Gmail'}
               </button>
             </form>
           </div>
         )}
 
-        {/* FORM ABSEN KARYAWAN */}
         {role === 'karyawan' && karyawanLogin && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
@@ -809,7 +809,6 @@ export default function App() {
           </div>
         )}
 
-        {/* DASHBOARD ADMIN ENTERPRISE */}
         {role === 'admin' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
@@ -820,7 +819,6 @@ export default function App() {
               <button onClick={() => setRole('pilih')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Logout Admin</button>
             </div>
 
-            {/* KARTU STATISTIK */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
               <div style={{ background: '#eff6ff', padding: '16px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
                 <span style={{ color: '#1e40af', fontSize: '13px', fontWeight: 'bold' }}>Total Karyawan</span>
@@ -855,7 +853,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* TAB REKAP */}
             {activeTab === 'riwayat' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
@@ -951,7 +948,6 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB KELOLA KARYAWAN */}
             {activeTab === 'karyawan' && (
               <div>
                 <h3 style={{ fontSize: '16px', color: '#334155', marginBottom: '12px' }}>Daftar Seluruh Karyawan Terdaftar ({daftarKaryawan.length} Orang)</h3>
