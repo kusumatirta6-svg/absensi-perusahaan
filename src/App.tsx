@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 
 interface Karyawan {
   id: string;
@@ -8,179 +9,180 @@ interface Karyawan {
 
 interface Absen {
   id: string;
+  karyawan_id: string;
   nama: string;
   jabatan: string;
   tanggal: string;
-  jamMasuk: string;
-  jamPulang: string;
-  totalJam: string;
+  jam_masuk: string;
+  jam_pulang: string;
+  total_jam: string;
   status: string;
 }
 
 export default function App() {
+  const [role, setRole] = useState<'pilih' | 'karyawan' | 'admin'>('pilih');
+  const [adminPassword, setAdminPassword] = useState('');
   const [activeTab, setActiveTab] = useState<'absen' | 'karyawan' | 'riwayat'>('absen');
-  
-  // State Karyawan
-  const [daftarKaryawan, setDaftarKaryawan] = useState<Karyawan[]>(() => {
-    const saved = localStorage.getItem('daftar_karyawan');
-    return saved ? JSON.parse(saved) : [
-      { id: '1', nama: 'Budi Santoso', jabatan: 'Software Engineer' },
-      { id: '2', nama: 'Siti Rahma', jabatan: 'HR Manager' }
-    ];
-  });
 
-  // State Absensi
-  const [riwayatAbsen, setRiwayatAbsen] = useState<Absen[]>(() => {
-    const saved = localStorage.getItem('riwayat_absen');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [daftarKaryawan, setDaftarKaryawan] = useState<Karyawan[]>([]);
+  const [riwayatAbsen, setRiwayatAbsen] = useState<Absen[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Input Form Karyawan Baru
-  const [namaBaru, setNamaBaru] = useState('');
-  const [jabatanBaru, setJabatanBaru] = useState('');
-
-  // Input Form Absen
+  // Form States
   const [selectedKaryawan, setSelectedKaryawan] = useState('');
   const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
+  const [namaBaru, setNamaBaru] = useState('');
+  const [jabatanBaru, setJabatanBaru] = useState('');
 
-  // Simpan ke LocalStorage
+  // Ambil Data dari Supabase saat pertama kali buka
   useEffect(() => {
-    localStorage.setItem('daftar_karyawan', JSON.stringify(daftarKaryawan));
-  }, [daftarKaryawan]);
+    fetchDataKaryawan();
+    fetchDataAbsensi();
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem('riwayat_absen', JSON.stringify(riwayatAbsen));
-  }, [riwayatAbsen]);
+  const fetchDataKaryawan = async () => {
+    const { data, error } = await supabase.from('karyawan').select('*').order('nama', { ascending: true });
+    if (!error && data) {
+      setDaftarKaryawan(data);
+    }
+  };
 
-  // Helper untuk menghitung durasi jam kerja
+  const fetchDataAbsensi = async () => {
+    const { data, error } = await supabase.from('absensi').select('*').order('created_at', { ascending: false });
+    if (!error && data) {
+      setRiwayatAbsen(data);
+    }
+  };
+
+  // Login Admin
+  const handleLoginAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPassword === 'admin123') {
+      setRole('admin');
+      setActiveTab('riwayat');
+    } else {
+      alert('Password Admin salah! (Gunakan: admin123)');
+    }
+  };
+
+  // Helper Hitung Durasi Jam Kerja
   const hitungDurasiJam = (masuk: string, pulang: string) => {
     if (masuk === '-' || pulang === '-') return '-';
     try {
       const [jamM, menitM] = masuk.split(':').map(Number);
       const [jamP, menitP] = pulang.split(':').map(Number);
-      
-      const totalMenitMasuk = jamM * 60 + menitM;
-      const totalMenitPulang = jamP * 60 + menitP;
-      
-      let selisihMenit = totalMenitPulang - totalMenitMasuk;
-      if (selisihMenit < 0) selisihMenit = 0; // Jika jam pulang mendahului
-      
-      const jam = Math.floor(selisihMenit / 60);
-      const menit = selisihMenit % 60;
-      
-      return `${jam} jam ${menit} menit`;
+      const selisihMenit = (jamP * 60 + menitP) - (jamM * 60 + menitM);
+      if (selisihMenit <= 0) return '0 jam';
+      return `${Math.floor(selisihMenit / 60)} jam ${selisihMenit % 60} menit`;
     } catch {
       return '-';
     }
   };
 
-  // Tambah Karyawan
-  const handleTambahKaryawan = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!namaBaru.trim() || !jabatanBaru.trim()) return;
-
-    const karyawanBaru: Karyawan = {
-      id: Date.now().toString(),
-      nama: namaBaru,
-      jabatan: jabatanBaru
-    };
-
-    setDaftarKaryawan([...daftarKaryawan, karyawanBaru]);
-    setNamaBaru('');
-    setJabatanBaru('');
-    alert('Karyawan berhasil didaftarkan!');
-  };
-
-  // Kirim Absen (Masuk / Pulang)
-  const handleKirimAbsen = (e: React.FormEvent) => {
+  // Kirim Absen (Masuk / Pulang) secara Real-time ke Supabase
+  const handleKirimAbsen = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedKaryawan) {
-      alert('Silakan pilih karyawan terlebih dahulu.');
+      alert('Silakan pilih nama Anda terlebih dahulu.');
       return;
     }
 
-    const karyawanObj = daftarKaryawan.find(k => k.id === selectedKaryawan);
-    if (!karyawanObj) return;
+    const kObj = daftarKaryawan.find(k => k.id === selectedKaryawan);
+    if (!kObj) return;
 
+    setLoading(true);
     const now = new Date();
     const tanggalHariIni = now.toLocaleDateString('id-ID');
     const jamSekarang = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
+    // Cek apakah sudah ada absen untuk hari ini
+    const { data: existingData } = await supabase
+      .from('absensi')
+      .select('*')
+      .eq('karyawan_id', selectedKaryawan)
+      .eq('tanggal', tanggalHariIni)
+      .single();
+
     if (jenisAbsen === 'Masuk') {
-      const sudahAbsenMasuk = riwayatAbsen.find(
-        r => r.id === selectedKaryawan && r.tanggal === tanggalHariIni
-      );
-
-      if (sudahAbsenMasuk) {
-        const updated = riwayatAbsen.map(r => {
-          if (r.id === selectedKaryawan && r.tanggal === tanggalHariIni) {
-            const total = hitungDurasiJam(jamSekarang, r.jamPulang);
-            return { ...r, jamMasuk: jamSekarang, totalJam: total, status: statusAbsen };
-          }
-          return r;
-        });
-        setRiwayatAbsen(updated);
-        alert(`Jam Masuk diperbarui untuk ${karyawanObj.nama}`);
+      if (existingData) {
+        const total = hitungDurasiJam(jamSekarang, existingData.jam_pulang);
+        await supabase
+          .from('absensi')
+          .update({ jam_masuk: jamSekarang, total_jam: total, status: statusAbsen })
+          .eq('id', existingData.id);
       } else {
-        const absenBaru: Absen = {
-          id: selectedKaryawan,
-          nama: karyawanObj.nama,
-          jabatan: karyawanObj.jabatan,
+        await supabase.from('absensi').insert([{
+          karyawan_id: selectedKaryawan,
+          nama: kObj.nama,
+          jabatan: kObj.jabatan,
           tanggal: tanggalHariIni,
-          jamMasuk: jamSekarang,
-          jamPulang: '-',
-          totalJam: '-',
+          jam_masuk: jamSekarang,
+          jam_pulang: '-',
+          total_jam: '-',
           status: statusAbsen
-        };
-        setRiwayatAbsen([absenBaru, ...riwayatAbsen]);
-        alert(`Absen Masuk berhasil dicatat untuk ${karyawanObj.nama}!`);
+        }]);
       }
+      alert(`Absen Masuk berhasil dicatat, ${kObj.nama}!`);
     } else {
-      // Absen Pulang
-      const indexExist = riwayatAbsen.findIndex(
-        r => r.id === selectedKaryawan && r.tanggal === tanggalHariIni
-      );
-
-      if (indexExist !== -1) {
-        const updated = [...riwayatAbsen];
-        updated[indexExist].jamPulang = jamSekarang;
-        updated[indexExist].totalJam = hitungDurasiJam(updated[indexExist].jamMasuk, jamSekarang);
-        setRiwayatAbsen(updated);
-        alert(`Absen Pulang berhasil dicatat untuk ${karyawanObj.nama}!`);
+      // Pulang
+      if (existingData) {
+        const total = hitungDurasiJam(existingData.jam_masuk, jamSekarang);
+        await supabase
+          .from('absensi')
+          .update({ jam_pulang: jamSekarang, total_jam: total })
+          .eq('id', existingData.id);
       } else {
-        const absenBaru: Absen = {
-          id: selectedKaryawan,
-          nama: karyawanObj.nama,
-          jabatan: karyawanObj.jabatan,
+        await supabase.from('absensi').insert([{
+          karyawan_id: selectedKaryawan,
+          nama: kObj.nama,
+          jabatan: kObj.jabatan,
           tanggal: tanggalHariIni,
-          jamMasuk: '-',
-          jamPulang: jamSekarang,
-          totalJam: '-',
+          jam_masuk: '-',
+          jam_pulang: jamSekarang,
+          total_jam: '-',
           status: statusAbsen
-        };
-        setRiwayatAbsen([absenBaru, ...riwayatAbsen]);
-        alert(`Absen Pulang dicatat (Tanpa data masuk awal) untuk ${karyawanObj.nama}!`);
+        }]);
       }
+      alert(`Absen Pulang berhasil dicatat, ${kObj.nama}! Hati-hati di jalan.`);
+    }
+
+    setLoading(false);
+    fetchDataAbsensi();
+  };
+
+  // Tambah Karyawan Baru ke Supabase (Mendukung 50+ Orang)
+  const handleTambahKaryawan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!namaBaru.trim() || !jabatanBaru.trim()) return;
+
+    setLoading(true);
+    const { error } = await supabase.from('karyawan').insert([{ nama: namaBaru, jabatan: jabatanBaru }]);
+    setLoading(false);
+
+    if (error) {
+      alert('Gagal menambahkan karyawan: ' + error.message);
+    } else {
+      alert('Karyawan baru berhasil ditambahkan ke database cloud!');
+      setNamaBaru('');
+      setJabatanBaru('');
+      fetchDataKaryawan();
     }
   };
 
-  // Fungsi Ekspor ke Excel (CSV)
+  // Download Excel Khusus Admin
   const exportToExcel = () => {
     if (riwayatAbsen.length === 0) {
-      alert('Belum ada data riwayat untuk diekspor.');
+      alert('Belum ada data absensi.');
       return;
     }
-
-    let csvContent = "data:text/csv;charset=utf-8,Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Status\n";
-    riwayatAbsen.forEach(row => {
-      csvContent += `"${row.nama}";"${row.jabatan}";${row.tanggal};${row.jamMasuk};${row.jamPulang};"${row.totalJam}";${row.status}\n`;
+    let csv = "data:text/csv;charset=utf-8,Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Status\n";
+    riwayatAbsen.forEach(r => {
+      csv += `"${r.nama}";"${r.jabatan}";${r.tanggal};${r.jam_masuk};${r.jam_pulang};"${r.total_jam}";${r.status}\n`;
     });
-
-    const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Rekap_Absensi_Jam_Kerja_${new Date().toLocaleDateString('id-ID')}.csv`);
+    link.setAttribute("href", encodeURI(csv));
+    link.setAttribute("download", `Rekap_Absensi_Perusahaan_${new Date().toLocaleDateString('id-ID')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -190,184 +192,216 @@ export default function App() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '20px', fontFamily: 'sans-serif' }}>
       <div style={{ maxWidth: '850px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
         
-        <h1 style={{ color: '#1f2937', textAlign: 'center', marginBottom: '4px', fontSize: '24px' }}>Sistem Absensi & Jam Kerja Perusahaan</h1>
-        <p style={{ color: '#4b5563', textAlign: 'center', marginBottom: '20px', fontSize: '14px' }}>Pencatatan Masuk, Pulang, dan Total Durasi Kerja Otomatis</p>
-
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
-          <button 
-            onClick={() => setActiveTab('absen')}
-            style={{ padding: '8px 16px', background: activeTab === 'absen' ? '#2563eb' : '#e5e7eb', color: activeTab === 'absen' ? 'white' : '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            Form Absen
-          </button>
-          <button 
-            onClick={() => setActiveTab('karyawan')}
-            style={{ padding: '8px 16px', background: activeTab === 'karyawan' ? '#2563eb' : '#e5e7eb', color: activeTab === 'karyawan' ? 'white' : '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            Pendaftaran Karyawan
-          </button>
-          <button 
-            onClick={() => setActiveTab('riwayat')}
-            style={{ padding: '8px 16px', background: activeTab === 'riwayat' ? '#2563eb' : '#e5e7eb', color: activeTab === 'riwayat' ? 'white' : '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            Riwayat & Export Excel
-          </button>
-        </div>
-
-        {/* TAB 1: FORM ABSEN */}
-        {activeTab === 'absen' && (
-          <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h2 style={{ fontSize: '18px', color: '#1f2937' }}>Catat Kehadiran (Masuk / Pulang)</h2>
+        {/* HALAMAN PEMILIHAN PERAN */}
+        {role === 'pilih' && (
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <h1 style={{ color: '#1f2937', marginBottom: '8px' }}>Sistem Absensi Real-Time Perusahaan</h1>
+            <p style={{ color: '#6b7280', marginBottom: '32px' }}>Sinkronisasi otomatis untuk 50+ karyawan & Portal Admin eksklusif</p>
             
-            <div>
-              <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Pilih Karyawan:</label>
-              <select 
-                value={selectedKaryawan} 
-                onChange={(e) => setSelectedKaryawan(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
-              >
-                <option value="">-- Pilih Karyawan --</option>
-                {daftarKaryawan.map(k => (
-                  <option key={k.id} value={k.id}>{k.nama} ({k.jabatan})</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Jenis Absen:</label>
-                <select 
-                  value={jenisAbsen} 
-                  onChange={(e) => setJenisAbsen(e.target.value as 'Masuk' | 'Pulang')}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
-                >
-                  <option value="Masuk">Absen Masuk</option>
-                  <option value="Pulang">Absen Pulang</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Status:</label>
-                <select 
-                  value={statusAbsen} 
-                  onChange={(e) => setStatusAbsen(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
-                >
-                  <option value="Hadir">Hadir</option>
-                  <option value="Izin">Izin</option>
-                  <option value="Sakit">Sakit</option>
-                  <option value="Cuti">Cuti</option>
-                </select>
-              </div>
-            </div>
-
-            <button 
-              type="submit" 
-              style={{ backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}
-            >
-              Simpan Absen {jenisAbsen}
-            </button>
-          </form>
-        )}
-
-        {/* TAB 2: PENDAFTARAN KARYAWAN */}
-        {activeTab === 'karyawan' && (
-          <div>
-            <h2 style={{ fontSize: '18px', color: '#1f2937', marginBottom: '16px' }}>Tambah Karyawan Baru</h2>
-            <form onSubmit={handleTambahKaryawan} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Nama Lengkap:</label>
-                <input 
-                  type="text" 
-                  value={namaBaru} 
-                  onChange={(e) => setNamaBaru(e.target.value)} 
-                  placeholder="Masukkan nama lengkap..." 
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Jabatan / Posisi:</label>
-                <input 
-                  type="text" 
-                  value={jabatanBaru} 
-                  onChange={(e) => setJabatanBaru(e.target.value)} 
-                  placeholder="Contoh: Staff Keuangan..." 
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
-                />
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
               <button 
-                type="submit" 
-                style={{ backgroundColor: '#16a34a', color: 'white', padding: '12px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
+                onClick={() => setRole('karyawan')}
+                style={{ background: '#2563eb', color: 'white', padding: '16px 32px', borderRadius: '8px', border: 'none', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
               >
-                Simpan Karyawan
+                👤 Masuk sebagai Karyawan
               </button>
-            </form>
-
-            <h3 style={{ fontSize: '16px', color: '#374151', marginBottom: '8px' }}>Daftar Karyawan Terdaftar ({daftarKaryawan.length})</h3>
-            <ul style={{ listStyle: 'none', padding: 0 }}>
-              {daftarKaryawan.map(k => (
-                <li key={k.id} style={{ padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', borderRadius: '4px', marginBottom: '4px' }}>
-                  <span><strong>{k.nama}</strong></span>
-                  <span style={{ color: '#6b7280' }}>{k.jabatan}</span>
-                </li>
-              ))}
-            </ul>
+              
+              <div style={{ background: '#f9fafb', padding: '16px', borderRadius: '8px', border: '1px solid #d1d5db', textAlign: 'left' }}>
+                <form onSubmit={handleLoginAdmin} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '14px', color: '#374151' }}>🔐 Login Khusus Admin:</label>
+                  <input 
+                    type="password" 
+                    placeholder="Password Admin..." 
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #d1d5db' }}
+                  />
+                  <button type="submit" style={{ background: '#16a34a', color: 'white', padding: '8px', borderRadius: '4px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
+                    Masuk Admin
+                  </button>
+                </form>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* TAB 3: RIWAYAT & EXCEL */}
-        {activeTab === 'riwayat' && (
+        {/* PORTAL KARYAWAN */}
+        {role === 'karyawan' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '18px', color: '#1f2937', margin: 0 }}>Rekapitulasi & Jam Kerja</h2>
-              {riwayatAbsen.length > 0 && (
-                <button 
-                  onClick={exportToExcel}
-                  style={{ backgroundColor: '#15803d', color: 'white', padding: '8px 14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}
-                >
-                  📥 Download Excel (Dengan Total Jam Kerja)
-                </button>
-              )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>Portal Absensi Karyawan</h2>
+              <button onClick={() => setRole('pilih')} style={{ background: '#9ca3af', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Kembali</button>
             </div>
 
-            {riwayatAbsen.length === 0 ? (
-              <p style={{ color: '#9ca3af', textAlign: 'center', padding: '20px 0' }}>Belum ada catatan absensi masuk atau pulang.</p>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
-                      <th style={{ padding: '8px' }}>Tanggal</th>
-                      <th style={{ padding: '8px' }}>Nama</th>
-                      <th style={{ padding: '8px' }}>Jabatan</th>
-                      <th style={{ padding: '8px' }}>Masuk</th>
-                      <th style={{ padding: '8px' }}>Pulang</th>
-                      <th style={{ padding: '8px' }}>Total Kerja</th>
-                      <th style={{ padding: '8px' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {riwayatAbsen.map((item, index) => (
-                      <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        <td style={{ padding: '8px', color: '#4b5563' }}>{item.tanggal}</td>
-                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.nama}</td>
-                        <td style={{ padding: '8px', color: '#6b7280' }}>{item.jabatan}</td>
-                        <td style={{ padding: '8px', color: '#2563eb', fontWeight: 'bold' }}>{item.jamMasuk}</td>
-                        <td style={{ padding: '8px', color: '#9333ea', fontWeight: 'bold' }}>{item.jamPulang}</td>
-                        <td style={{ padding: '8px', color: '#047857', fontWeight: 'bold' }}>{item.totalJam}</td>
-                        <td style={{ padding: '8px' }}>
-                          <span style={{ 
-                            padding: '3px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold',
-                            backgroundColor: item.status === 'Hadir' ? '#dcfce7' : '#fef9c3',
-                            color: item.status === 'Hadir' ? '#166534' : '#854d0e'
-                          }}>
-                            {item.status}
-                          </span>
-                        </td>
-                      </tr>
+            <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Pilih Nama Anda ({daftarKaryawan.length} Karyawan Terdaftar):</label>
+                <select 
+                  value={selectedKaryawan} 
+                  onChange={(e) => setSelectedKaryawan(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '15px' }}
+                >
+                  <option value="">-- Pilih Nama Karyawan --</option>
+                  {daftarKaryawan.map(k => (
+                    <option key={k.id} value={k.id}>{k.nama} — {k.jabatan}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Kategori Absen:</label>
+                  <select 
+                    value={jenisAbsen} 
+                    onChange={(e) => setJenisAbsen(e.target.value as 'Masuk' | 'Pulang')}
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                  >
+                    <option value="Masuk">Absen Masuk</option>
+                    <option value="Pulang">Absen Pulang</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#374151' }}>Keterangan:</label>
+                  <select 
+                    value={statusAbsen} 
+                    onChange={(e) => setStatusAbsen(e.target.value)}
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                  >
+                    <option value="Hadir">Hadir</option>
+                    <option value="Izin">Izin</option>
+                    <option value="Sakit">Sakit</option>
+                    <option value="Cuti">Cuti</option>
+                  </select>
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={loading}
+                style={{ background: '#2563eb', color: 'white', padding: '14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '10px' }}
+              >
+                {loading ? 'Menyimpan ke Cloud...' : `Kirim Absen ${jenisAbsen} Sekarang`}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* DASHBOARD ADMIN EKSKLUSIF */}
+        {role === 'admin' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>Dashboard Admin Perusahaan</h2>
+                <span style={{ color: '#16a34a', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Database Supabase</span>
+              </div>
+              <button onClick={() => setRole('pilih')} style={{ background: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Logout Admin</button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              <button 
+                onClick={() => setActiveTab('riwayat')}
+                style={{ padding: '8px 16px', background: activeTab === 'riwayat' ? '#2563eb' : '#e5e7eb', color: activeTab === 'riwayat' ? 'white' : '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                📊 Rekap & Download Excel
+              </button>
+              <button 
+                onClick={() => setActiveTab('karyawan')}
+                style={{ padding: '8px 16px', background: activeTab === 'karyawan' ? '#2563eb' : '#e5e7eb', color: activeTab === 'karyawan' ? 'white' : '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                👥 Kelola Data Karyawan (50+)
+              </button>
+            </div>
+
+            {/* REKAP & EXCEL */}
+            {activeTab === 'riwayat' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#374151' }}>Seluruh Riwayat Absensi Real-Time</h3>
+                  {riwayatAbsen.length > 0 && (
+                    <button 
+                      onClick={exportToExcel}
+                      style={{ backgroundColor: '#15803d', color: 'white', padding: '8px 14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}
+                    >
+                      📥 Download Excel Khusus Admin
+                    </button>
+                  )}
+                </div>
+
+                {riwayatAbsen.length === 0 ? (
+                  <p style={{ color: '#9ca3af', textAlign: 'center', padding: '30px' }}>Belum ada data absensi masuk.</p>
+                ) : (
+                  <div style={{ overflowX: 'auto', maxHeight: '400px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db', position: 'sticky', top: 0 }}>
+                          <th style={{ padding: '8px' }}>Tanggal</th>
+                          <th style={{ padding: '8px' }}>Nama</th>
+                          <th style={{ padding: '8px' }}>Jabatan</th>
+                          <th style={{ padding: '8px' }}>Masuk</th>
+                          <th style={{ padding: '8px' }}>Pulang</th>
+                          <th style={{ padding: '8px' }}>Total Kerja</th>
+                          <th style={{ padding: '8px' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {riwayatAbsen.map((item) => (
+                          <tr key={item.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                            <td style={{ padding: '8px', color: '#4b5563' }}>{item.tanggal}</td>
+                            <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.nama}</td>
+                            <td style={{ padding: '8px', color: '#6b7280' }}>{item.jabatan}</td>
+                            <td style={{ padding: '8px', color: '#2563eb', fontWeight: 'bold' }}>{item.jam_masuk}</td>
+                            <td style={{ padding: '8px', color: '#9333ea', fontWeight: 'bold' }}>{item.jam_pulang}</td>
+                            <td style={{ padding: '8px', color: '#047857', fontWeight: 'bold' }}>{item.total_jam}</td>
+                            <td style={{ padding: '8px' }}>
+                              <span style={{ padding: '3px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#166534' }}>
+                                {item.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* KELOLA KARYAWAN */}
+            {activeTab === 'karyawan' && (
+              <div>
+                <h3 style={{ fontSize: '16px', color: '#374151', marginBottom: '12px' }}>Tambah Karyawan Baru (Cloud Supabase)</h3>
+                <form onSubmit={handleTambahKaryawan} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', background: '#f9fafb', padding: '16px', borderRadius: '8px' }}>
+                  <input 
+                    type="text" 
+                    placeholder="Nama Lengkap Karyawan..." 
+                    value={namaBaru} 
+                    onChange={(e) => setNamaBaru(e.target.value)} 
+                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Jabatan / Divisi..." 
+                    value={jabatanBaru} 
+                    onChange={(e) => setJabatanBaru(e.target.value)} 
+                    style={{ padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                  />
+                  <button type="submit" disabled={loading} style={{ background: '#16a34a', color: 'white', padding: '10px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
+                    {loading ? 'Menambahkan...' : '+ Daftarkan Karyawan Baru'}
+                  </button>
+                </form>
+
+                <h4 style={{ fontSize: '15px', color: '#374151', marginBottom: '8px' }}>Daftar Seluruh Karyawan ({daftarKaryawan.length} Orang)</h4>
+                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                  <ul style={{ listStyle: 'none', padding: 0 }}>
+                    {daftarKaryawan.map(k => (
+                      <li key={k.id} style={{ padding: '8px 12px', background: '#fff', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', borderRadius: '4px', marginBottom: '4px' }}>
+                        <span><strong>{k.nama}</strong></span>
+                        <span style={{ color: '#6b7280' }}>{k.jabatan}</span>
+                      </li>
                     ))}
-                  </tbody>
-                </table>
+                  </ul>
+                </div>
               </div>
             )}
           </div>
