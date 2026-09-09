@@ -118,7 +118,7 @@ export default function App() {
       <div style={{ maxWidth: '750px', margin: '0 auto', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
         
         {/* Header & Navigasi Tab */}
-        <hh1 style={{ color: '#1f2937', textAlign: 'center', marginBottom: '4px', fontSize: '24px' }}>Sistem Absensi Perusahaan Profesional</h1>
+        <h1 style={{ color: '#1f2937', textAlign: 'center', marginBottom: '4px', fontSize: '24px' }}>Sistem Absensi Perusahaan Profesional</h1>
         <p style={{ color: '#4b5563', textAlign: 'center', marginBottom: '20px', fontSize: '14px' }}>Kelola kehadiran dan data karyawan dengan mudah</p>
 
         <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e5e7eb', paddingBottom: '12px' }}>
