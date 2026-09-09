@@ -6,6 +6,7 @@ interface Karyawan {
   id_karyawan: string;
   nama: string;
   jabatan: string;
+  email?: string;
   pin?: string;
 }
 
@@ -24,7 +25,7 @@ interface Absen {
 }
 
 export default function App() {
-  const [role, setRole] = useState<'pilih' | 'karyawan' | 'admin'>('pilih');
+  const [role, setRole] = useState<'pilih' | 'karyawan' | 'daftar_karyawan' | 'admin'>('pilih');
   const [adminPassword, setAdminPassword] = useState('');
   const [activeTab, setActiveTab] = useState<'absen' | 'karyawan' | 'riwayat'>('absen');
 
@@ -32,14 +33,15 @@ export default function App() {
   const [riwayatAbsen, setRiwayatAbsen] = useState<Absen[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Form States Karyawan Baru
-  const [idKaryawanBaru, setIdKaryawanBaru] = useState('');
-  const [namaBaru, setNamaBaru] = useState('');
-  const [jabatanBaru, setJabatanBaru] = useState('');
-  const [pinBaru, setPinBaru] = useState('1234');
+  // Form States Pendaftaran Mandiri Karyawan (via Gmail & PIN Sendiri)
+  const [regIdKaryawan, setRegIdKaryawan] = useState('');
+  const [regNama, setRegNama] = useState('');
+  const [regJabatan, setRegJabatan] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPin, setRegPin] = useState('');
 
   // Form States Login Karyawan & Absen
-  const [inputPinKaryawan, setInputPinKaryawan] = useState('');
+  const [inputIdentitas, setInputIdentitas] = useState(''); // Bisa pakai PIN atau Gmail
   const [karyawanLogin, setKaryawanLogin] = useState<Karyawan | null>(null);
   const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
@@ -56,7 +58,6 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // KONFIGURASI TITIK PUSAT KANTOR & RADIUS MAKSIMAL (Geofencing)
-  // Contoh Koordinat Kantor (Ubah sesuai koordinat asli perusahaan Anda)
   const KANTOR_LAT = -6.1751; 
   const KANTOR_LNG = 106.8650;
   const MAKS_RADIUS_METER = 200; // Toleransi radius 200 meter
@@ -72,9 +73,11 @@ export default function App() {
       ambilLokasiGPS();
     } else {
       stopCamera();
-      setKaryawanLogin(null);
-      setInputPinKaryawan('');
-      setFotoSnapshot(null);
+      if (role !== 'daftar_karyawan') {
+        setKaryawanLogin(null);
+        setInputIdentitas('');
+        setFotoSnapshot(null);
+      }
     }
   }, [role]);
 
@@ -112,9 +115,8 @@ export default function App() {
     }
   };
 
-  // Hitung Jarak Haversine untuk Geofencing GPS
   const hitungJarakGPS = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371e3; // Radius bumi dalam meter
+    const R = 6371e3;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = 
@@ -122,7 +124,7 @@ export default function App() {
       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
       Math.sin(dLon/2) * Math.sin(dLon/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c; // Jarak dalam meter
+    return R * c;
   };
 
   const ambilLokasiGPS = () => {
@@ -154,20 +156,66 @@ export default function App() {
     if (!error && data) setRiwayatAbsen(data);
   };
 
-  const handleLoginPIN = (e: React.FormEvent) => {
+  // Login Karyawan menggunakan PIN atau Email Gmail
+  const handleLoginKaryawan = (e: React.FormEvent) => {
     e.preventDefault();
-    const found = daftarKaryawan.find(k => k.pin === inputPinKaryawan || (!k.pin && inputPinKaryawan === '1234'));
+    const query = inputIdentitas.trim().toLowerCase();
+    const found = daftarKaryawan.find(k => 
+      (k.pin && k.pin.toLowerCase() === query) || 
+      (k.email && k.email.toLowerCase() === query) ||
+      (!k.pin && query === '1234')
+    );
+
     if (found) {
       setKaryawanLogin(found);
       alert(`Selamat datang, ${found.nama}! Silakan lakukan absensi.`);
     } else {
-      alert('PIN Karyawan salah! (Coba PIN default: 1234)');
+      alert('Identitas (PIN atau Email Gmail) tidak ditemukan! Silakan daftar akun terlebih dahulu.');
+    }
+  };
+
+  // Pendaftaran Mandiri oleh Karyawan
+  const handlePendaftaranMandiri = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regIdKaryawan.trim() || !regNama.trim() || !regJabatan.trim() || !regEmail.trim() || !regPin.trim()) {
+      alert('Semua kolom wajib diisi termasuk Email Gmail dan PIN!');
+      return;
+    }
+
+    if (!regEmail.includes('@gmail.com')) {
+      alert('Harap masukkan alamat Email Gmail yang valid!');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.from('karyawan').insert([
+      { 
+        id_karyawan: regIdKaryawan, 
+        nama: regNama, 
+        jabatan: regJabatan, 
+        email: regEmail, 
+        pin: regPin 
+      }
+    ]);
+    setLoading(false);
+
+    if (error) {
+      alert('Gagal mendaftar: ' + error.message);
+    } else {
+      alert('Akun Anda berhasil dibuat! Silakan kembali ke menu Login Karyawan.');
+      setRegIdKaryawan('');
+      setRegNama('');
+      setRegJabatan('');
+      setRegEmail('');
+      setRegPin('');
+      setRole('karyawan');
+      fetchDataKaryawan();
     }
   };
 
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'admin123') { // Ganti password admin di sini jika diinginkan
+    if (adminPassword === 'admin123') {
       setRole('admin');
       setActiveTab('riwayat');
     } else {
@@ -207,7 +255,6 @@ export default function App() {
     e.preventDefault();
     if (!karyawanLogin) return;
 
-    // Validasi Geofencing Radius Kantor
     if (jarakKantorMeter !== null && jarakKantorMeter > MAKS_RADIUS_METER) {
       alert(`GAGAL ABSEN: Anda berada di luar radius kantor! Jarak Anda sekitar ${jarakKantorMeter} meter dari titik kantor (Maksimal ${MAKS_RADIUS_METER}m).`);
       return;
@@ -281,33 +328,8 @@ export default function App() {
     setLoading(false);
     setFotoSnapshot(null);
     setKaryawanLogin(null);
-    setInputPinKaryawan('');
+    setInputIdentitas('');
     fetchDataAbsensi();
-  };
-
-  const handleTambahKaryawan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!idKaryawanBaru.trim() || !namaBaru.trim() || !jabatanBaru.trim() || !pinBaru.trim()) {
-      alert('Semua kolom wajib diisi termasuk PIN!');
-      return;
-    }
-
-    setLoading(true);
-    const { error } = await supabase.from('karyawan').insert([
-      { id_karyawan: idKaryawanBaru, nama: namaBaru, jabatan: jabatanBaru, pin: pinBaru }
-    ]);
-    setLoading(false);
-
-    if (error) {
-      alert('Gagal menambahkan karyawan: ' + error.message);
-    } else {
-      alert('Karyawan baru berhasil didaftarkan beserta PIN!');
-      setIdKaryawanBaru('');
-      setNamaBaru('');
-      setJabatanBaru('');
-      setPinBaru('1234');
-      fetchDataKaryawan();
-    }
   };
 
   const handleHapusKaryawan = async (id: string, nama: string) => {
@@ -340,7 +362,6 @@ export default function App() {
     }
   };
 
-  // Cetak Laporan PDF Berlogo Perusahaan
   const handleCetakPDF = () => {
     const printWindow = window.open('', '', 'height=700,width=900');
     if (!printWindow) return;
@@ -371,12 +392,12 @@ export default function App() {
             <thead>
               <tr>
                 <th>ID</th>
+                <th>Email Gmail</th>
                 <th>Tanggal</th>
                 <th>Nama Karyawan</th>
                 <th>Jabatan</th>
                 <th>Masuk</th>
                 <th>Pulang</th>
-                <th>Total Kerja</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -384,15 +405,17 @@ export default function App() {
     `;
 
     filteredAbsen.forEach(r => {
+      const kryData = daftarKaryawan.find(k => k.id === r.karyawan_id);
+      const emailVal = kryData?.email || '-';
       htmlContent += `
         <tr>
           <td>${r.id_karyawan || '-'}</td>
+          <td>${emailVal}</td>
           <td>${r.tanggal}</td>
           <td><b>${r.nama}</b></td>
           <td>${r.jabatan}</td>
           <td>${r.jam_masuk}</td>
           <td>${r.jam_pulang}</td>
-          <td>${r.total_jam}</td>
           <td>${r.status}</td>
         </tr>
       `;
@@ -437,11 +460,13 @@ export default function App() {
       alert('Tidak ada data untuk diekspor.');
       return;
     }
-    let csv = "data:text/csv;charset=utf-8,ID Karyawan;Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Lokasi GPS;Status\n";
+    let csv = "data:text/csv;charset=utf-8,ID Karyawan;Email Gmail;Nama Karyawan;Jabatan;Tanggal;Jam Masuk;Jam Pulang;Total Jam Kerja;Lokasi GPS;Status\n";
     filteredAbsen.forEach(r => {
       const idKry = r.id_karyawan || '-';
+      const kryData = daftarKaryawan.find(k => k.id === r.karyawan_id);
+      const emailVal = kryData?.email || '-';
       const lok = r.lokasi || '-';
-      csv += `"${idKry}";"${r.nama}";"${r.jabatan}";${r.tanggal};${r.jam_masuk};${r.jam_pulang};"${r.total_jam}";"${lok}";${r.status}\n`;
+      csv += `"${idKry}";"${emailVal}";"${r.nama}";"${r.jabatan}";${r.tanggal};${r.jam_masuk};${r.jam_pulang};"${r.total_jam}";"${lok}";${r.status}\n`;
     });
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csv));
@@ -471,42 +496,59 @@ export default function App() {
         boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' 
       }}>
         
-        {/* PILIH ROLE */}
+        {/* PILIH ROLE UTAMA */}
         {role === 'pilih' && (
           <div style={{ textAlign: 'center', padding: '30px 10px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢🛡️</div>
+            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢✉️</div>
             <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Enterprise Terpadu</h1>
-            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Dilengkapi PIN Keamanan Karyawan, Geofencing Radius Kantor, & Cetak PDF Resmi</p>
+            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Daftar mandiri via Gmail & PIN sendiri, Geofencing GPS, serta Cetak Laporan Resmi</p>
             
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
               <button 
                 onClick={() => setRole('karyawan')}
                 style={{ 
                   background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', 
                   color: 'white', 
-                  padding: '18px 32px', 
+                  padding: '16px 28px', 
                   borderRadius: '12px', 
                   border: 'none', 
-                  fontSize: '16px', 
+                  fontSize: '15px', 
                   fontWeight: 'bold', 
                   cursor: 'pointer', 
                   boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
                 }}
               >
-                👤 Masuk sebagai Karyawan
+                👤 Login Karyawan (PIN / Gmail)
+              </button>
+
+              <button 
+                onClick={() => setRole('daftar_karyawan')}
+                style={{ 
+                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', 
+                  color: 'white', 
+                  padding: '16px 28px', 
+                  borderRadius: '12px', 
+                  border: 'none', 
+                  fontSize: '15px', 
+                  fontWeight: 'bold', 
+                  cursor: 'pointer', 
+                  boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)'
+                }}
+              >
+                ✍️ Daftar Akun Karyawan Baru
               </button>
               
-              <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'left', minWidth: '260px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-                <form onSubmit={handleLoginAdmin} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '14px', color: '#334155' }}>🔐 Portal Admin:</label>
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'left', minWidth: '260px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                <form onSubmit={handleLoginAdmin} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '13px', color: '#334155' }}>🔐 Portal Admin:</label>
                   <input 
                     type="password" 
-                    placeholder="Masukkan Password Admin..." 
+                    placeholder="Password Admin..." 
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
-                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
+                    style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none' }}
                   />
-                  <button type="submit" style={{ background: '#10b981', color: 'white', padding: '10px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
+                  <button type="submit" style={{ background: '#10b981', color: 'white', padding: '8px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
                     Login Admin
                   </button>
                 </form>
@@ -515,45 +557,102 @@ export default function App() {
           </div>
         )}
 
-        {/* PORTAL KARYAWAN DENGAN LOGIN PIN */}
-        {role === 'karyawan' && !karyawanLogin && (
-          <div style={{ textAlign: 'center', padding: '30px 20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px' }}>Autentikasi PIN Karyawan</h2>
+        {/* HALAMAN PENDAFTARAN MANDIRI KARYAWAN (VIA GMAIL & PIN SENDIRI) */}
+        {role === 'daftar_karyawan' && (
+          <div style={{ padding: '10px 10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px', fontWeight: '700' }}>Pendaftaran Akun Karyawan Mandiri</h2>
               <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>← Kembali</button>
             </div>
-            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>Masukkan PIN rahasia Anda untuk membuka menu absensi harian.</p>
-            
-            <form onSubmit={handleLoginPIN} style={{ maxWidth: '320px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Silakan daftarkan data diri Anda, gunakan email Gmail aktif dan buat PIN rahasia Anda sendiri untuk login.</p>
+
+            <form onSubmit={handlePendaftaranMandiri} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <input 
+                  type="text" 
+                  placeholder="ID Karyawan / NIP (Cth: EMP001)..." 
+                  value={regIdKaryawan} 
+                  onChange={(e) => setRegIdKaryawan(e.target.value)} 
+                  style={{ padding: '11px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                />
+                <input 
+                  type="password" 
+                  maxLength={6}
+                  placeholder="Buat PIN Rahasia (Cth: 5678)..." 
+                  value={regPin} 
+                  onChange={(e) => setRegPin(e.target.value)} 
+                  style={{ padding: '11px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                />
+              </div>
               <input 
-                type="password" 
-                maxLength={6}
-                placeholder="Masukkan PIN Rahasia..." 
-                value={inputPinKaryawan}
-                onChange={(e) => setInputPinKaryawan(e.target.value)}
-                style={{ padding: '14px', textAlign: 'center', fontSize: '18px', letterSpacing: '4px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                type="text" 
+                placeholder="Nama Lengkap Karyawan..." 
+                value={regNama} 
+                onChange={(e) => setRegNama(e.target.value)} 
+                style={{ padding: '11px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
               />
-              <button type="submit" style={{ background: '#2563eb', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
-                Masuk Absensi
+              <input 
+                type="text" 
+                placeholder="Jabatan / Divisi (Cth: Staff IT)..." 
+                value={regJabatan} 
+                onChange={(e) => setRegJabatan(e.target.value)} 
+                style={{ padding: '11px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+              />
+              <input 
+                type="email" 
+                placeholder="Alamat Email Gmail (Cth: nama@gmail.com)..." 
+                value={regEmail} 
+                onChange={(e) => setRegEmail(e.target.value)} 
+                style={{ padding: '11px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+              />
+              <button type="submit" disabled={loading} style={{ background: '#0284c7', color: 'white', padding: '13px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', marginTop: '6px' }}>
+                {loading ? 'Mendaftarkan Akun...' : 'Daftar Akun Sekarang'}
               </button>
             </form>
           </div>
         )}
 
-        {/* FORM ABSEN KARYAWAN SETELAH LOGIN PIN */}
+        {/* LOGIN KARYAWAN (MENGGUNAKAN PIN ATAU GMAIL) */}
+        {role === 'karyawan' && !karyawanLogin && (
+          <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px' }}>Login Akun Karyawan</h2>
+              <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>← Kembali</button>
+            </div>
+            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>Masukkan <strong>PIN Rahasia</strong> atau <strong>Email Gmail</strong> Anda untuk mulai absen.</p>
+            
+            <form onSubmit={handleLoginKaryawan} style={{ maxWidth: '360px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input 
+                type="text" 
+                placeholder="Masukkan PIN atau Gmail Anda..." 
+                value={inputIdentitas}
+                onChange={(e) => setInputIdentitas(e.target.value)}
+                style={{ padding: '12px 14px', textAlign: 'center', fontSize: '15px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+              />
+              <button type="submit" style={{ background: '#2563eb', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+                Masuk Menu Absensi
+              </button>
+              <p style={{ fontSize: '13px', color: '#64748b', marginTop: '10px' }}>
+                Belum punya akun? <span onClick={() => setRole('daftar_karyawan')} style={{ color: '#2563eb', cursor: 'pointer', fontWeight: 'bold' }}>Daftar di sini</span>
+              </p>
+            </form>
+          </div>
+        )}
+
+        {/* FORM ABSEN KARYAWAN SETELAH LOGIN */}
         {role === 'karyawan' && karyawanLogin && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <div>
                 <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Halo, {karyawanLogin.nama} ({karyawanLogin.jabatan})</h2>
-                <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>Lokasi: <strong style={{ color: '#0284c7' }}>{lokasiUser}</strong></p>
+                <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>Email: {karyawanLogin.email || '-'} | Lokasi: <strong style={{ color: '#0284c7' }}>{lokasiUser}</strong></p>
                 {jarakKantorMeter !== null && (
                   <p style={{ margin: '2px 0 0 0', fontSize: '12px', fontWeight: 'bold', color: jarakKantorMeter <= MAKS_RADIUS_METER ? '#16a34a' : '#dc2626' }}>
                     {jarakKantorMeter <= MAKS_RADIUS_METER ? `✔ Dalam Radius Kantor (±${jarakKantorMeter}m)` : `❌ Di Luar Radius Kantor (±${jarakKantorMeter}m > ${MAKS_RADIUS_METER}m)`}
                   </p>
                 )}
               </div>
-              <button onClick={() => setKaryawanLogin(null)} style={{ background: '#64748b', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Ganti PIN</button>
+              <button onClick={() => setKaryawanLogin(null)} style={{ background: '#64748b', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Ganti Akun</button>
             </div>
 
             <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -628,7 +727,7 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <div>
                 <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Dashboard Admin Enterprise</h2>
-                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase (PIN & Geofencing Active)</span>
+                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase (Gmail & PIN Active)</span>
               </div>
               <button onClick={() => setRole('pilih')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Logout Admin</button>
             </div>
@@ -664,11 +763,11 @@ export default function App() {
                 onClick={() => setActiveTab('karyawan')}
                 style={{ padding: '10px 18px', background: activeTab === 'karyawan' ? '#2563eb' : '#f1f5f9', color: activeTab === 'karyawan' ? 'white' : '#475569', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
               >
-                👥 Kelola Karyawan & PIN
+                👥 Kelola Data Karyawan
               </button>
             </div>
 
-            {/* TAB REKAP DENGAN PENCARIAN, EXCEL & CETAK PDF */}
+            {/* TAB REKAP */}
             {activeTab === 'riwayat' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
@@ -724,38 +823,39 @@ export default function App() {
                       <thead>
                         <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', position: 'sticky', top: 0, color: '#475569' }}>
                           <th style={{ padding: '12px' }}>ID</th>
+                          <th style={{ padding: '12px' }}>Email Gmail</th>
                           <th style={{ padding: '12px' }}>Tanggal</th>
                           <th style={{ padding: '12px' }}>Nama Karyawan</th>
                           <th style={{ padding: '12px' }}>Jabatan</th>
                           <th style={{ padding: '12px' }}>Masuk</th>
                           <th style={{ padding: '12px' }}>Pulang</th>
-                          <th style={{ padding: '12px' }}>Total Kerja</th>
-                          <th style={{ padding: '12px' }}>Titik GPS</th>
                           <th style={{ padding: '12px' }}>Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredAbsen.map((item) => (
-                          <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '12px', fontWeight: 'bold', color: '#475569' }}>{item.id_karyawan || '-'}</td>
-                            <td style={{ padding: '12px', color: '#64748b' }}>{item.tanggal}</td>
-                            <td style={{ padding: '12px', fontWeight: 'bold', color: '#1e293b' }}>{item.nama}</td>
-                            <td style={{ padding: '12px', color: '#64748b' }}>{item.jabatan}</td>
-                            <td style={{ padding: '12px', color: '#2563eb', fontWeight: 'bold' }}>{item.jam_masuk}</td>
-                            <td style={{ padding: '12px', color: '#9333ea', fontWeight: 'bold' }}>{item.jam_pulang}</td>
-                            <td style={{ padding: '12px', color: '#059669', fontWeight: 'bold' }}>{item.total_jam}</td>
-                            <td style={{ padding: '12px', color: '#0284c7', fontSize: '11px', fontWeight: '500' }}>{item.lokasi || '-'}</td>
-                            <td style={{ padding: '12px' }}>
-                              <span style={{ 
-                                padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', 
-                                backgroundColor: item.status.includes('Terlambat') ? '#fee2e2' : '#dcfce7', 
-                                color: item.status.includes('Terlambat') ? '#991b1b' : '#166534' 
-                              }}>
-                                {item.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {filteredAbsen.map((item) => {
+                          const kryData = daftarKaryawan.find(k => k.id === item.karyawan_id);
+                          return (
+                            <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '12px', fontWeight: 'bold', color: '#475569' }}>{item.id_karyawan || '-'}</td>
+                              <td style={{ padding: '12px', color: '#0284c7', fontSize: '12px' }}>{kryData?.email || '-'}</td>
+                              <td style={{ padding: '12px', color: '#64748b' }}>{item.tanggal}</td>
+                              <td style={{ padding: '12px', fontWeight: 'bold', color: '#1e293b' }}>{item.nama}</td>
+                              <td style={{ padding: '12px', color: '#64748b' }}>{item.jabatan}</td>
+                              <td style={{ padding: '12px', color: '#2563eb', fontWeight: 'bold' }}>{item.jam_masuk}</td>
+                              <td style={{ padding: '12px', color: '#9333ea', fontWeight: 'bold' }}>{item.jam_pulang}</td>
+                              <td style={{ padding: '12px' }}>
+                                <span style={{ 
+                                  padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', 
+                                  backgroundColor: item.status.includes('Terlambat') ? '#fee2e2' : '#dcfce7', 
+                                  color: item.status.includes('Terlambat') ? '#991b1b' : '#166534' 
+                                }}>
+                                  {item.status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -763,59 +863,22 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB KELOLA KARYAWAN & PIN */}
+            {/* TAB KELOLA KARYAWAN OLEH ADMIN */}
             {activeTab === 'karyawan' && (
               <div>
-                <h3 style={{ fontSize: '16px', color: '#334155', marginBottom: '12px' }}>Pendaftaran Karyawan Baru & PIN Keamanan</h3>
-                <form onSubmit={handleTambahKaryawan} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <input 
-                      type="text" 
-                      placeholder="ID Karyawan / NIP (Cth: EMP001)..." 
-                      value={idKaryawanBaru} 
-                      onChange={(e) => setIdKaryawanBaru(e.target.value)} 
-                      style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                    />
-                    <input 
-                      type="password" 
-                      maxLength={6}
-                      placeholder="PIN Login (Cth: 1234)..." 
-                      value={pinBaru} 
-                      onChange={(e) => setPinBaru(e.target.value)} 
-                      style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                    />
-                  </div>
-                  <input 
-                    type="text" 
-                    placeholder="Nama Lengkap Karyawan..." 
-                    value={namaBaru} 
-                    onChange={(e) => setNamaBaru(e.target.value)} 
-                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <input 
-                    type="text" 
-                    placeholder="Jabatan / Divisi..." 
-                    value={jabatanBaru} 
-                    onChange={(e) => setJabatanBaru(e.target.value)} 
-                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <button type="submit" disabled={loading} style={{ background: '#10b981', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
-                    {loading ? 'Menambahkan...' : '+ Daftarkan Karyawan Baru'}
-                  </button>
-                </form>
-
-                <h4 style={{ fontSize: '15px', color: '#334155', marginBottom: '8px' }}>Daftar Karyawan Terdaftar ({daftarKaryawan.length} Orang)</h4>
-                <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '4px' }}>
+                <h3 style={{ fontSize: '16px', color: '#334155', marginBottom: '12px' }}>Daftar Seluruh Karyawan Terdaftar ({daftarKaryawan.length} Orang)</h3>
+                <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '4px' }}>
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {daftarKaryawan.map(k => (
                       <li key={k.id} style={{ padding: '10px 14px', background: '#fff', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '3px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>
                             {k.id_karyawan || 'ID-'}
                           </span>
                           <div>
                             <strong style={{ color: '#1e293b', display: 'block' }}>{k.nama} <span style={{ fontSize: '11px', color: '#64748b' }}>(PIN: {k.pin || '1234'})</span></strong>
-                            <span style={{ color: '#64748b', fontSize: '12px' }}>{k.jabatan}</span>
+                            <span style={{ color: '#0284c7', fontSize: '12px', display: 'block' }}>{k.email || 'Tanpa Email'}</span>
+                            <span style={{ color: '#64748b', fontSize: '11px' }}>{k.jabatan}</span>
                           </div>
                         </div>
                         <button 
