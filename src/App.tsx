@@ -25,7 +25,7 @@ interface Absen {
 }
 
 export default function App() {
-  const [role, setRole] = useState<'pilih' | 'karyawan' | 'daftar_karyawan' | 'admin'>('pilih');
+  const [role, setRole] = useState<'pilih' | 'karyawan' | 'daftar_karyawan' | 'lupa_password' | 'admin'>('pilih');
   const [adminPassword, setAdminPassword] = useState('');
   const [activeTab, setActiveTab] = useState<'absen' | 'karyawan' | 'riwayat'>('absen');
 
@@ -33,16 +33,22 @@ export default function App() {
   const [riwayatAbsen, setRiwayatAbsen] = useState<Absen[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Form States Pendaftaran Mandiri Karyawan
+  // Form States Pendaftaran Mandiri
   const [regIdKaryawan, setRegIdKaryawan] = useState('');
   const [regNama, setRegNama] = useState('');
   const [regJabatan, setRegJabatan] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPin, setRegPin] = useState('');
 
-  // Form States Login Karyawan & Absen
-  const [inputIdentitas, setInputIdentitas] = useState('');
+  // Form States Login Karyawan (Pilih Nama + PIN)
+  const [selectedKaryawanId, setSelectedKaryawanId] = useState('');
+  const [inputPin, setInputPin] = useState('');
   const [karyawanLogin, setKaryawanLogin] = useState<Karyawan | null>(null);
+
+  // Form States Lupa Password via Gmail
+  const [lupaEmail, setLupaEmail] = useState('');
+
+  // Form States Absen
   const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
 
@@ -57,15 +63,11 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ==========================================
-  // PENGATURAN KANTOR & JAM MASUK STANDAR
-  // ==========================================
+  // Konfigurasi Jam Masuk & Radius Kantor
   const KANTOR_LAT = -6.1751; 
   const KANTOR_LNG = 106.8650;
-  const MAKS_RADIUS_METER = 200; // Toleransi radius 200 meter
+  const MAKS_RADIUS_METER = 200; 
 
-  // ATUR JAM MASUK KANTOR DI SINI (Contoh: Jam 08:00 pagi)
-  // Ubah angka 8 dan 0 jika ingin jam masuk misal 07:30 -> JAM_MASUK_JAM = 7, JAM_MASUK_MENIT = 30
   const JAM_MASUK_JAM = 8;
   const JAM_MASUK_MENIT = 0;
 
@@ -75,18 +77,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (role === 'karyawan') {
+    if (role === 'karyawan' && karyawanLogin) {
       startCamera();
       ambilLokasiGPS();
     } else {
       stopCamera();
-      if (role !== 'daftar_karyawan') {
-        setKaryawanLogin(null);
-        setInputIdentitas('');
-        setFotoSnapshot(null);
-      }
     }
-  }, [role]);
+  }, [role, karyawanLogin]);
 
   const startCamera = async () => {
     try {
@@ -163,20 +160,53 @@ export default function App() {
     if (!error && data) setRiwayatAbsen(data);
   };
 
+  // Login Karyawan (Pilih Nama + Masukkan PIN)
   const handleLoginKaryawan = (e: React.FormEvent) => {
     e.preventDefault();
-    const query = inputIdentitas.trim().toLowerCase();
-    const found = daftarKaryawan.find(k => 
-      (k.pin && k.pin.toLowerCase() === query) || 
-      (k.email && k.email.toLowerCase() === query) ||
-      (!k.pin && query === '1234')
-    );
+    if (!selectedKaryawanId) {
+      alert('Silakan pilih nama karyawan terlebih dahulu.');
+      return;
+    }
+    const found = daftarKaryawan.find(k => k.id === selectedKaryawanId);
+    if (!found) return;
 
-    if (found) {
+    const pinUser = found.pin || '1234';
+    if (inputPin === pinUser) {
       setKaryawanLogin(found);
-      alert(`Selamat datang, ${found.nama}! Silakan lakukan absensi.`);
+      alert(`Selamat datang, ${found.nama}!`);
     } else {
-      alert('Identitas (PIN atau Email Gmail) tidak ditemukan! Silakan daftar akun terlebih dahulu.');
+      alert('PIN Rahasia salah! Silakan coba lagi atau pilih "Lupa Password".');
+    }
+  };
+
+  // Kirim OTP / Reset Password ke Gmail via Supabase Auth
+  const handleKirimOTPGmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!lupaEmail.trim() || !lupaEmail.includes('@gmail.com')) {
+      alert('Masukkan alamat Email Gmail yang valid.');
+      return;
+    }
+
+    // Cek apakah email terdaftar di database karyawan
+    const found = daftarKaryawan.find(k => k.email && k.email.toLowerCase() === lupaEmail.toLowerCase());
+    if (!found) {
+      alert('Email Gmail tersebut tidak ditemukan dalam data karyawan terdaftar!');
+      return;
+    }
+
+    setLoading(true);
+    // Menggunakan Supabase Auth untuk mengirim instruksi/kode pemulihan sandi ke email
+    const { error } = await supabase.auth.resetPasswordForEmail(lupaEmail, {
+      redirectTo: window.location.origin,
+    });
+    setLoading(false);
+
+    if (error) {
+      alert('Gagal mengirim email pemulihan: ' + error.message);
+    } else {
+      alert(`Instruksi pemulihan PIN / Kode OTP telah dikirimkan ke Gmail: ${lupaEmail}. Silakan cek kotak masuk atau folder spam Anda.`);
+      setLupaEmail('');
+      setRole('karyawan');
     }
   };
 
@@ -207,7 +237,7 @@ export default function App() {
     if (error) {
       alert('Gagal mendaftar: ' + error.message);
     } else {
-      alert('Akun Anda berhasil dibuat! Silakan kembali ke menu Login Karyawan.');
+      alert('Akun Anda berhasil dibuat! Silakan login menggunakan Nama dan PIN Anda.');
       setRegIdKaryawan('');
       setRegNama('');
       setRegJabatan('');
@@ -334,7 +364,8 @@ export default function App() {
     setLoading(false);
     setFotoSnapshot(null);
     setKaryawanLogin(null);
-    setInputIdentitas('');
+    setSelectedKaryawanId('');
+    setInputPin('');
     fetchDataAbsensi();
   };
 
@@ -393,7 +424,6 @@ export default function App() {
             <h1>PT. PERUSAHAAN ENTERPRISE INDONESIA</h1>
             <p>Jl. Jendral Sudirman Kav. 52-53, Jakarta Pusat | Telp: (021) 555-8899</p>
             <p><b>LAPORAN RESMI REKAPITULASI KEHADIRAN KARYAWAN</b></p>
-            <p style="font-size: 11px; color: #444;">Batas Jam Masuk Standar: ${String(JAM_MASUK_JAM).padStart(2, '0')}:${String(JAM_MASUK_MENIT).padStart(2, '0')} WIB</p>
           </div>
           <table>
             <thead>
@@ -506,9 +536,9 @@ export default function App() {
         {/* PILIH ROLE UTAMA */}
         {role === 'pilih' && (
           <div style={{ textAlign: 'center', padding: '30px 10px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢⏱️</div>
+            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢🔑</div>
             <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Enterprise Terpadu</h1>
-            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Batas Jam Masuk Standar: <strong>{String(JAM_MASUK_JAM).padStart(2, '0')}:{String(JAM_MASUK_MENIT).padStart(2, '0')} WIB</strong></p>
+            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Pilih Nama & Masukkan PIN, Fitur Lupa Password via Gmail, & Geofencing GPS</p>
             
             <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
               <button 
@@ -525,7 +555,7 @@ export default function App() {
                   boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
                 }}
               >
-                👤 Login Karyawan (PIN / Gmail)
+                👤 Login Karyawan (Pilih Nama & PIN)
               </button>
 
               <button 
@@ -564,14 +594,14 @@ export default function App() {
           </div>
         )}
 
-        {/* HALAMAN PENDAFTARAN MANDIRI KARYAWAN */}
+        {/* PENDAFTARAN MANDIRI */}
         {role === 'daftar_karyawan' && (
           <div style={{ padding: '10px 10px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
               <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px', fontWeight: '700' }}>Pendaftaran Akun Karyawan Mandiri</h2>
               <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>← Kembali</button>
             </div>
-            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Silakan daftarkan data diri Anda, gunakan email Gmail aktif dan buat PIN rahasia Anda sendiri untuk login.</p>
+            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Daftarkan data diri Anda beserta Email Gmail dan buat PIN rahasia Anda sendiri.</p>
 
             <form onSubmit={handlePendaftaranMandiri} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -619,29 +649,80 @@ export default function App() {
           </div>
         )}
 
-        {/* LOGIN KARYAWAN */}
+        {/* LOGIN KARYAWAN: PILIH NAMA + MASUKKAN PIN */}
         {role === 'karyawan' && !karyawanLogin && (
           <div style={{ textAlign: 'center', padding: '30px 20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px' }}>Login Akun Karyawan</h2>
+              <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px' }}>Login Karyawan (Pilih Nama & PIN)</h2>
               <button onClick={() => setRole('pilih')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>← Kembali</button>
             </div>
-            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>Masukkan <strong>PIN Rahasia</strong> atau <strong>Email Gmail</strong> Anda untuk mulai absen.</p>
+            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>Silakan pilih nama Anda dari daftar di bawah lalu masukkan PIN rahasia Anda.</p>
             
-            <form onSubmit={handleLoginKaryawan} style={{ maxWidth: '360px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <input 
-                type="text" 
-                placeholder="Masukkan PIN atau Gmail Anda..." 
-                value={inputIdentitas}
-                onChange={(e) => setInputIdentitas(e.target.value)}
-                style={{ padding: '12px 14px', textAlign: 'center', fontSize: '15px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
-              />
-              <button type="submit" style={{ background: '#2563eb', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+            <form onSubmit={handleLoginKaryawan} style={{ maxWidth: '380px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '13px', color: '#334155' }}>Pilih Nama Anda:</label>
+                <select 
+                  value={selectedKaryawanId}
+                  onChange={(e) => setSelectedKaryawanId(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', background: '#fff' }}
+                >
+                  <option value="">-- Pilih Nama Karyawan --</option>
+                  {daftarKaryawan.map(k => (
+                    <option key={k.id} value={k.id}>
+                      {k.nama} — {k.jabatan} [{k.id_karyawan || 'ID'}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '13px', color: '#334155' }}>Masukkan PIN Rahasia:</label>
+                <input 
+                  type="password" 
+                  maxLength={6}
+                  placeholder="PIN Anda (Cth: 1234)..." 
+                  value={inputPin}
+                  onChange={(e) => setInputPin(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '16px', letterSpacing: '3px' }}
+                />
+              </div>
+
+              <button type="submit" style={{ background: '#2563eb', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', marginTop: '4px' }}>
                 Masuk Menu Absensi
               </button>
-              <p style={{ fontSize: '13px', color: '#64748b', marginTop: '10px' }}>
-                Belum punya akun? <span onClick={() => setRole('daftar_karyawan')} style={{ color: '#2563eb', cursor: 'pointer', fontWeight: 'bold' }}>Daftar di sini</span>
-              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '8px' }}>
+                <span onClick={() => setRole('lupa_password')} style={{ color: '#0284c7', cursor: 'pointer', fontWeight: 'bold' }}>
+                  🔑 Lupa Password / PIN?
+                </span>
+                <span onClick={() => setRole('daftar_karyawan')} style={{ color: '#2563eb', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Daftar Akun Baru
+                </span>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* HALAMAN LUPA PASSWORD / PIN VIA GMAIL */}
+        {role === 'lupa_password' && (
+          <div style={{ padding: '20px 10px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, color: '#1e293b', fontSize: '20px', fontWeight: '700' }}>Pemulihan PIN / Lupa Password</h2>
+              <button onClick={() => setRole('karyawan')} style={{ background: '#64748b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>← Kembali</button>
+            </div>
+            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '24px' }}>Masukkan alamat Email Gmail terdaftar Anda. Kami akan mengirimkan instruksi pemulihan atau kode OTP ke email Anda.</p>
+
+            <form onSubmit={handleKirimOTPGmail} style={{ maxWidth: '360px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
+              <input 
+                type="email" 
+                placeholder="Masukkan Email Gmail Anda..." 
+                value={lupaEmail}
+                onChange={(e) => setLupaEmail(e.target.value)}
+                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+              />
+              <button type="submit" disabled={loading} style={{ background: '#0284c7', color: 'white', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+                {loading ? 'Mengirim Pemulihan...' : 'Kirim Kode OTP / Pemulihan ke Gmail'}
+              </button>
             </form>
           </div>
         )}
@@ -659,7 +740,7 @@ export default function App() {
                   </p>
                 )}
               </div>
-              <button onClick={() => setKaryawanLogin(null)} style={{ background: '#64748b', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Ganti Akun</button>
+              <button onClick={() => { setKaryawanLogin(null); setSelectedKaryawanId(''); setInputPin(''); }} style={{ background: '#64748b', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Ganti Akun</button>
             </div>
 
             <form onSubmit={handleKirimAbsen} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
