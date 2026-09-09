@@ -60,10 +60,10 @@ export default function App() {
     }
   };
 
-  // Login Admin (Ganti 'Moon1729' dengan password rahasia Anda)
+  // Login Admin (Ganti 'admin123' dengan password rahasia Anda)
   const handleLoginAdmin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'admin123') {
+    if (adminPassword === 'Moon1729') {
       setRole('admin');
       setActiveTab('riwayat');
     } else {
