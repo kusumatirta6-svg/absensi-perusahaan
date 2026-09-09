@@ -33,7 +33,7 @@ export default function App() {
   const [riwayatAbsen, setRiwayatAbsen] = useState<Absen[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Form States Pendaftaran Mandiri Karyawan (via Gmail & PIN Sendiri)
+  // Form States Pendaftaran Mandiri Karyawan
   const [regIdKaryawan, setRegIdKaryawan] = useState('');
   const [regNama, setRegNama] = useState('');
   const [regJabatan, setRegJabatan] = useState('');
@@ -41,7 +41,7 @@ export default function App() {
   const [regPin, setRegPin] = useState('');
 
   // Form States Login Karyawan & Absen
-  const [inputIdentitas, setInputIdentitas] = useState(''); // Bisa pakai PIN atau Gmail
+  const [inputIdentitas, setInputIdentitas] = useState('');
   const [karyawanLogin, setKaryawanLogin] = useState<Karyawan | null>(null);
   const [jenisAbsen, setJenisAbsen] = useState<'Masuk' | 'Pulang'>('Masuk');
   const [statusAbsen, setStatusAbsen] = useState('Hadir');
@@ -57,10 +57,17 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // KONFIGURASI TITIK PUSAT KANTOR & RADIUS MAKSIMAL (Geofencing)
+  // ==========================================
+  // PENGATURAN KANTOR & JAM MASUK STANDAR
+  // ==========================================
   const KANTOR_LAT = -6.1751; 
   const KANTOR_LNG = 106.8650;
   const MAKS_RADIUS_METER = 200; // Toleransi radius 200 meter
+
+  // ATUR JAM MASUK KANTOR DI SINI (Contoh: Jam 08:00 pagi)
+  // Ubah angka 8 dan 0 jika ingin jam masuk misal 07:30 -> JAM_MASUK_JAM = 7, JAM_MASUK_MENIT = 30
+  const JAM_MASUK_JAM = 8;
+  const JAM_MASUK_MENIT = 0;
 
   useEffect(() => {
     fetchDataKaryawan();
@@ -156,7 +163,6 @@ export default function App() {
     if (!error && data) setRiwayatAbsen(data);
   };
 
-  // Login Karyawan menggunakan PIN atau Email Gmail
   const handleLoginKaryawan = (e: React.FormEvent) => {
     e.preventDefault();
     const query = inputIdentitas.trim().toLowerCase();
@@ -174,7 +180,6 @@ export default function App() {
     }
   };
 
-  // Pendaftaran Mandiri oleh Karyawan
   const handlePendaftaranMandiri = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regIdKaryawan.trim() || !regNama.trim() || !regJabatan.trim() || !regEmail.trim() || !regPin.trim()) {
@@ -242,7 +247,8 @@ export default function App() {
     try {
       const [jam, menit] = jamMasuk.split(':').map(Number);
       const totalMenitMasuk = jam * 60 + menit;
-      const batasMenitNormal = 8 * 60; // Jam 08:00
+      const batasMenitNormal = JAM_MASUK_JAM * 60 + JAM_MASUK_MENIT;
+
       if (totalMenitMasuk > batasMenitNormal) {
         const selisih = totalMenitMasuk - batasMenitNormal;
         return `Terlambat (${selisih} mnt)`;
@@ -387,6 +393,7 @@ export default function App() {
             <h1>PT. PERUSAHAAN ENTERPRISE INDONESIA</h1>
             <p>Jl. Jendral Sudirman Kav. 52-53, Jakarta Pusat | Telp: (021) 555-8899</p>
             <p><b>LAPORAN RESMI REKAPITULASI KEHADIRAN KARYAWAN</b></p>
+            <p style="font-size: 11px; color: #444;">Batas Jam Masuk Standar: ${String(JAM_MASUK_JAM).padStart(2, '0')}:${String(JAM_MASUK_MENIT).padStart(2, '0')} WIB</p>
           </div>
           <table>
             <thead>
@@ -499,9 +506,9 @@ export default function App() {
         {/* PILIH ROLE UTAMA */}
         {role === 'pilih' && (
           <div style={{ textAlign: 'center', padding: '30px 10px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢✉️</div>
+            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏢⏱️</div>
             <h1 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '28px', fontWeight: '800' }}>Sistem Absensi Enterprise Terpadu</h1>
-            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Daftar mandiri via Gmail & PIN sendiri, Geofencing GPS, serta Cetak Laporan Resmi</p>
+            <p style={{ color: '#64748b', marginBottom: '36px', fontSize: '15px' }}>Batas Jam Masuk Standar: <strong>{String(JAM_MASUK_JAM).padStart(2, '0')}:{String(JAM_MASUK_MENIT).padStart(2, '0')} WIB</strong></p>
             
             <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
               <button 
@@ -557,7 +564,7 @@ export default function App() {
           </div>
         )}
 
-        {/* HALAMAN PENDAFTARAN MANDIRI KARYAWAN (VIA GMAIL & PIN SENDIRI) */}
+        {/* HALAMAN PENDAFTARAN MANDIRI KARYAWAN */}
         {role === 'daftar_karyawan' && (
           <div style={{ padding: '10px 10px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
@@ -612,7 +619,7 @@ export default function App() {
           </div>
         )}
 
-        {/* LOGIN KARYAWAN (MENGGUNAKAN PIN ATAU GMAIL) */}
+        {/* LOGIN KARYAWAN */}
         {role === 'karyawan' && !karyawanLogin && (
           <div style={{ textAlign: 'center', padding: '30px 20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -639,7 +646,7 @@ export default function App() {
           </div>
         )}
 
-        {/* FORM ABSEN KARYAWAN SETELAH LOGIN */}
+        {/* FORM ABSEN KARYAWAN */}
         {role === 'karyawan' && karyawanLogin && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
@@ -702,7 +709,7 @@ export default function App() {
                     onChange={(e) => setStatusAbsen(e.target.value)}
                     style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px', background: '#fff' }}
                   >
-                    <option value="Hadir">Hadir (Batas Masuk 08:00)</option>
+                    <option value="Hadir">Hadir (Batas Masuk {String(JAM_MASUK_JAM).padStart(2, '0')}:{String(JAM_MASUK_MENIT).padStart(2, '0')})</option>
                     <option value="Izin">Izin</option>
                     <option value="Sakit">Sakit</option>
                     <option value="Cuti">Cuti</option>
@@ -727,7 +734,7 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <div>
                 <h2 style={{ margin: 0, color: '#1e293b', fontSize: '22px', fontWeight: '700' }}>Dashboard Admin Enterprise</h2>
-                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Terhubung ke Cloud Supabase (Gmail & PIN Active)</span>
+                <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>● Standar Masuk: {String(JAM_MASUK_JAM).padStart(2, '0')}:{String(JAM_MASUK_MENIT).padStart(2, '0')} WIB</span>
               </div>
               <button onClick={() => setRole('pilih')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Logout Admin</button>
             </div>
@@ -863,7 +870,7 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB KELOLA KARYAWAN OLEH ADMIN */}
+            {/* TAB KELOLA KARYAWAN */}
             {activeTab === 'karyawan' && (
               <div>
                 <h3 style={{ fontSize: '16px', color: '#334155', marginBottom: '12px' }}>Daftar Seluruh Karyawan Terdaftar ({daftarKaryawan.length} Orang)</h3>
